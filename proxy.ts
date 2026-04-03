@@ -32,9 +32,13 @@ export async function proxy(request: NextRequest) {
 
   const isLoginPage = request.nextUrl.pathname.startsWith('/login')
   const isAuthRoute = request.nextUrl.pathname.startsWith('/auth')
+  const isApiRoute = request.nextUrl.pathname.startsWith('/api')
 
-  // Not logged in → redirect to login
+  // Not logged in → API routes get 401 JSON, pages get redirected to login
   if (!user && !isLoginPage && !isAuthRoute) {
+    if (isApiRoute) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
