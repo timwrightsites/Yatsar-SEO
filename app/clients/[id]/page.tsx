@@ -1,60 +1,71 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Play, RefreshCw, Globe } from 'lucide-react'
+import { ArrowLeft, Play, RefreshCw, Globe, Settings2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase-server'
 import { TrafficChart } from '@/components/charts/TrafficChart'
 import { BotActivity } from '@/components/dashboard/BotActivity'
-import { mockClients, mockBotConfigs, mockActivityLogs, mockMetrics } from '@/lib/mock-data'
+import { GSCPanel } from '@/components/client/GSCPanel'
+import { PageSpeedPanel } from '@/components/client/PageSpeedPanel'
+import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
 import { cn } from '@/lib/utils'
+import type { Client, BotConfig, Metric, ActivityLog } from '@/types/database'
 
 interface Props {
   params: Promise<{ id: string }>
 }
 
 const botMeta: Record<string, { label: string; desc: string; dot: string }> = {
-  content:   { label: 'Content Bot',   desc: 'Keyword research, article drafts, content gaps',       dot: 'bg-yellow-400' },
-  link:      { label: 'Link Bot',      desc: 'Outreach, guest posts, backlink opportunities',         dot: 'bg-blue-400'   },
-  technical: { label: 'Technical Bot', desc: 'Site audits, speed, crawl issues',                     dot: 'bg-green-400'  },
-  geo:       { label: 'GEO Bot',       desc: 'Local listings, Google Business Profile, citations',   dot: 'bg-green-500'  },
+  content:   { label: 'Content Bot',   desc: 'Keyword research, article drafts, content gaps',     dot: 'bg-yellow-400' },
+  link:      { label: 'Link Bot',      desc: 'Outreach, guest posts, backlink opportunities',       dot: 'bg-blue-400'   },
+  technical: { label: 'Technical Bot', desc: 'Site audits, speed, crawl issues',                   dot: 'bg-green-400'  },
+  geo:       { label: 'GEO Bot',       desc: 'Local listings, Google Business Profile, citations', dot: 'bg-green-500'  },
 }
 
 const statusBadge: Record<string, { label: string; className: string }> = {
-  running: { label: 'Running',  className: 'border-blue-500  text-blue-400'  },
-  idle:    { label: 'Idle',     className: 'border-white/15  text-white/40'  },
-  paused:  { label: 'Paused',   className: 'border-yellow-500 text-yellow-400' },
-  error:   { label: 'Error',    className: 'border-red-500   text-red-400'   },
+  running: { label: 'Running', className: 'border-blue-500  text-blue-400'   },
+  idle:    { label: 'Idle',    className: 'border-white/15  text-white/40'   },
+  paused:  { label: 'Paused', className: 'border-yellow-500 text-yellow-400' },
+  error:   { label: 'Error',  className: 'border-red-500   text-red-400'    },
 }
-
-const speedColor = (score: number) =>
-  score >= 80 ? 'text-[#22c55e]' : score >= 60 ? 'text-yellow-400' : 'text-red-400'
 
 export default async function ClientPage({ params }: Props) {
   const { id } = await params
-  const client = mockClients.find((c) => c.id === id)
+  const supabase = await createClient()
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any
+
+  const [
+    { data: client },
+    { data: bots },
+    { data: logs },
+    { data: metrics },
+  ] = await Promise.all([
+    db.from('clients').select('*').eq('id', id).single() as Promise<{ data: Client & { gsc_property: string | null; pagespeed_url: string | null } | null }>,
+    db.from('bot_configs').select('*').eq('client_id', id) as Promise<{ data: BotConfig[] | null }>,
+    db.from('activity_logs').select('*').eq('client_id', id).order('created_at', { ascending: false }).limit(20) as Promise<{ data: ActivityLog[] | null }>,
+    db.from('metrics').select('*').eq('client_id', id).order('month') as Promise<{ data: Metric[] | null }>,
+  ])
+
   if (!client) notFound()
 
-  const bots    = mockBotConfigs.filter((b) => b.client_id === id)
-  const activity = mockActivityLogs.filter((a) => a.client_id === id)
-  const metrics  = mockMetrics.filter((m) => m.client_id === id)
-  const latest   = metrics[metrics.length - 1]
-  const prev     = metrics[metrics.length - 2]
+  const safeMetrics = (metrics ?? []) as Metric[]
+  const latest = safeMetrics[safeMetrics.length - 1]
+  const prev   = safeMetrics[safeMetrics.length - 2]
 
-  const trafficChange = prev && latest
-    ? Math.round(((latest.organic_traffic! - prev.organic_traffic!) / prev.organic_traffic!) * 100)
+  const trafficChange = prev && latest && prev.organic_traffic && latest.organic_traffic
+    ? Math.round(((latest.organic_traffic - prev.organic_traffic) / prev.organic_traffic) * 100)
     : 0
 
   return (
     <div className="min-h-screen bg-[#0d0d0d] px-8 py-8">
 
-      {/* Back link */}
-      <Link
-        href="/"
-        className="inline-flex items-center gap-1.5 text-white/30 text-sm hover:text-white/70 transition-all mb-6"
-      >
-        <ArrowLeft size={14} />
-        Agency View
+      {/* Back */}
+      <Link href="/" className="inline-flex items-center gap-1.5 text-white/30 text-sm hover:text-white/70 transition-all mb-6">
+        <ArrowLeft size={14} /> Agency View
       </Link>
 
-      {/* Page header */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <div className="flex items-baseline gap-3">
@@ -66,12 +77,7 @@ export default async function ClientPage({ params }: Props) {
           <div className="flex items-center gap-2 mt-1.5 text-white/30 text-sm">
             <Globe size={13} />
             <span>{client.domain}</span>
-            {client.industry && (
-              <>
-                <span>·</span>
-                <span>{client.industry}</span>
-              </>
-            )}
+            {client.industry && <><span>·</span><span>{client.industry}</span></>}
           </div>
         </div>
         <span className={cn(
@@ -84,7 +90,7 @@ export default async function ClientPage({ params }: Props) {
         </span>
       </div>
 
-      {/* ── Metric cards row ── */}
+      {/* Metric cards */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         {[
           { label: 'Organic Traffic', value: latest?.organic_traffic?.toLocaleString() ?? '—', change: trafficChange },
@@ -106,67 +112,46 @@ export default async function ClientPage({ params }: Props) {
         ))}
       </div>
 
-      {/* ── Chart + PageSpeed row ── */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        {/* Traffic chart */}
-        <div className="col-span-2 bg-[#141414] border border-white/8 rounded-lg p-5">
-          <p className="text-white/40 text-xs mb-1">Organic Traffic</p>
-          <p className="text-white font-semibold text-sm mb-4">Last 6 Months</p>
-          <TrafficChart metrics={metrics} />
-        </div>
-
-        {/* PageSpeed + Search Console */}
-        <div className="flex flex-col gap-4">
-          <div className="bg-[#141414] border border-white/8 rounded-lg p-4 flex-1">
-            <p className="text-white/40 text-xs mb-3">PageSpeed Score</p>
-            <div className="flex gap-6">
-              <div>
-                <p className="text-white/30 text-[11px] mb-1">Mobile</p>
-                <div className="flex items-end gap-1">
-                  <span className={cn('text-3xl font-bold', speedColor(latest?.page_speed_mobile ?? 0))}>
-                    {latest?.page_speed_mobile ?? '—'}
-                  </span>
-                  <span className="text-white/20 text-xs pb-1">/100</span>
-                </div>
-              </div>
-              <div>
-                <p className="text-white/30 text-[11px] mb-1">Desktop</p>
-                <div className="flex items-end gap-1">
-                  <span className={cn('text-3xl font-bold', speedColor(latest?.page_speed_desktop ?? 0))}>
-                    {latest?.page_speed_desktop ?? '—'}
-                  </span>
-                  <span className="text-white/20 text-xs pb-1">/100</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="bg-[#141414] border border-white/8 rounded-lg p-4 flex-1">
-            <p className="text-white/40 text-xs mb-3">Search Console</p>
-            <div className="flex gap-6">
-              <div>
-                <p className="text-white/30 text-[11px] mb-1">Impressions</p>
-                <span className="text-white font-bold text-2xl">
-                  {latest?.impressions ? `${(latest.impressions / 1000).toFixed(0)}K` : '—'}
-                </span>
-              </div>
-              <div>
-                <p className="text-white/30 text-[11px] mb-1">Clicks</p>
-                <span className="text-white font-bold text-2xl">
-                  {latest?.clicks ? `${(latest.clicks / 1000).toFixed(1)}K` : '—'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Traffic chart */}
+      <div className="bg-[#141414] border border-white/8 rounded-lg p-5 mb-6">
+        <p className="text-white/40 text-xs mb-1">Organic Traffic</p>
+        <p className="text-white font-semibold text-sm mb-4">Last 6 Months</p>
+        <TrafficChart metrics={safeMetrics} />
       </div>
 
-      {/* ── Bots row ── */}
+      {/* GSC + PageSpeed — only shown when configured */}
+      {client.gsc_property ? (
+        <div className="mb-6">
+          <GSCPanel property={client.gsc_property} />
+        </div>
+      ) : null}
+
+      {client.pagespeed_url ? (
+        <div className="mb-6">
+          <PageSpeedPanel url={client.pagespeed_url} />
+        </div>
+      ) : null}
+
+      {/* Config panel — set GSC property + PageSpeed URL */}
+      <div className="mb-6">
+        <details className="group">
+          <summary className="flex items-center gap-2 text-white/30 text-sm cursor-pointer hover:text-white/60 transition-colors list-none">
+            <Settings2 size={14} />
+            {client.gsc_property ? 'Edit integrations' : 'Connect GSC & PageSpeed'}
+          </summary>
+          <div className="mt-3">
+            <ClientConfigPanel clientId={client.id} gscProperty={client.gsc_property ?? ''} pagespeedUrl={client.pagespeed_url ?? ''} />
+          </div>
+        </details>
+      </div>
+
+      {/* Bots */}
       <div className="mb-6">
         <h2 className="text-white font-bold text-xl mb-4">Bots</h2>
         <div className="grid grid-cols-4 gap-4">
           {(['content', 'link', 'technical', 'geo'] as const).map((type) => {
-            const bot  = bots.find((b) => b.bot_type === type)
-            const meta = botMeta[type]
+            const bot    = (bots ?? []).find((b) => b.bot_type === type)
+            const meta   = botMeta[type]
             const status = bot?.status ?? 'idle'
             const badge  = statusBadge[status]
 
@@ -190,8 +175,7 @@ export default async function ClientPage({ params }: Props) {
                 <button className="w-full flex items-center justify-center gap-1.5 py-2 text-xs text-white/60 border border-white/10 rounded-md hover:bg-white/5 hover:text-white transition-all">
                   {status === 'running'
                     ? <><RefreshCw size={11} className="animate-spin" /> Running...</>
-                    : <><Play size={11} /> Run Now</>
-                  }
+                    : <><Play size={11} /> Run Now</>}
                 </button>
               </div>
             )
@@ -199,8 +183,7 @@ export default async function ClientPage({ params }: Props) {
         </div>
       </div>
 
-      {/* ── Bot Activity ── */}
-      <BotActivity logs={activity} />
+      <BotActivity logs={(logs ?? []) as ActivityLog[]} />
     </div>
   )
 }

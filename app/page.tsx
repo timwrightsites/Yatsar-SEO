@@ -1,12 +1,21 @@
+import { createClient } from '@/lib/supabase-server'
 import { ClientCard } from '@/components/dashboard/ClientCard'
 import { BotActivity } from '@/components/dashboard/BotActivity'
-import { mockClients, mockActivityLogs } from '@/lib/mock-data'
+import type { Client, ActivityLog } from '@/types/database'
 
-export default function DashboardPage() {
-  const totalMRR = mockClients
-    .filter((c) => c.status === 'active')
-    .reduce((sum, c) => sum + (c.monthly_retainer ?? 0), 0)
+export default async function DashboardPage() {
+  const supabase = await createClient()
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any
+
+  const [{ data: clients }, { data: logs }] = await Promise.all([
+    db.from('clients').select('*').order('created_at') as Promise<{ data: Client[] | null }>,
+    db.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(20) as Promise<{ data: ActivityLog[] | null }>,
+  ])
+
+  const activeClients = (clients ?? []).filter((c: Client) => c.status === 'active')
+  const totalMRR = activeClients.reduce((sum: number, c: Client) => sum + (c.monthly_retainer ?? 0), 0)
   const mrrDisplay = totalMRR >= 1000
     ? `$${(totalMRR / 1000).toFixed(1)}K MRR`
     : `$${totalMRR} MRR`
@@ -24,12 +33,12 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-10">
-        {mockClients.map((client) => (
-          <ClientCard key={client.id} client={client} stage="Audit Site" trafficChange={12} lastUpdate="2h ago" />
+        {(clients ?? []).map((client: Client) => (
+          <ClientCard key={client.id} client={client} />
         ))}
       </div>
 
-      <BotActivity logs={mockActivityLogs} />
+      <BotActivity logs={(logs ?? []) as ActivityLog[]} />
     </div>
   )
 }
