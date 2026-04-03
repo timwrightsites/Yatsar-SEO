@@ -1,11 +1,9 @@
 import { createClient } from '@/lib/supabase-server'
-import { ClientCard } from '@/components/dashboard/ClientCard'
-import { BotActivity } from '@/components/dashboard/BotActivity'
+import { DashboardShell } from '@/components/dashboard/DashboardShell'
 import type { Client, ActivityLog } from '@/types/database'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
 
@@ -21,24 +19,10 @@ export default async function DashboardPage() {
     : `$${totalMRR} MRR`
 
   return (
-    <div className="min-h-screen bg-[#0d0d0d] px-8 py-8">
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-white font-bold text-4xl">Agency View</h1>
-          <span className="text-[#22c55e] font-semibold text-base">{mrrDisplay}</span>
-        </div>
-        <button className="flex items-center gap-2 bg-white text-black font-semibold text-sm px-4 py-2 rounded-lg hover:bg-white/90 transition-all">
-          Add Client <span className="text-lg leading-none">+</span>
-        </button>
-      </div>
-
-      <div className="grid grid-cols-4 gap-4 mb-10">
-        {(clients ?? []).map((client: Client) => (
-          <ClientCard key={client.id} client={client} />
-        ))}
-      </div>
-
-      <BotActivity logs={(logs ?? []) as ActivityLog[]} />
-    </div>
+    <DashboardShell
+      clients={clients ?? []}
+      logs={(logs ?? []) as ActivityLog[]}
+      mrrDisplay={mrrDisplay}
+    />
   )
 }
