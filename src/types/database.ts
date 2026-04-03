@@ -1,32 +1,54 @@
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[]
 
+export interface AgencySettings {
+  id: string
+  user_id: string
+  display_name: string | null
+  gsc_api_key: string | null
+  pagespeed_api_key: string | null
+  updated_at: string | null
+}
+
 export interface Database {
   public: {
+    Views: Record<string, never>
+    Functions: Record<string, never>
     Tables: {
       clients: {
         Row: Client
         Insert: Omit<Client, 'id' | 'created_at'>
         Update: Partial<Omit<Client, 'id' | 'created_at'>>
+        Relationships: []
       }
       bot_configs: {
         Row: BotConfig
         Insert: Omit<BotConfig, 'id' | 'created_at'>
         Update: Partial<Omit<BotConfig, 'id' | 'created_at'>>
+        Relationships: []
       }
       activity_logs: {
         Row: ActivityLog
         Insert: Omit<ActivityLog, 'id' | 'created_at'>
         Update: Partial<Omit<ActivityLog, 'id' | 'created_at'>>
+        Relationships: []
       }
       client_knowledge_bases: {
         Row: ClientKB
         Insert: Omit<ClientKB, 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Omit<ClientKB, 'id' | 'created_at'>>
+        Relationships: []
       }
       metrics: {
         Row: Metric
         Insert: Omit<Metric, 'id' | 'created_at'>
         Update: Partial<Omit<Metric, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      agency_settings: {
+        Row: AgencySettings
+        Insert: Omit<AgencySettings, 'id'>
+        Update: Partial<Omit<AgencySettings, 'id'>>
+        Relationships: []
       }
     }
   }
