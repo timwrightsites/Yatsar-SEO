@@ -131,11 +131,13 @@ export async function GET(request: Request) {
       'https://www.googleapis.com/auth/webmasters.readonly',
     )
 
-    // Fetch overview (no dimensions = site totals), top queries, top pages in parallel
-    const [overviewRows, queryRows, pageRows] = await Promise.all([
+    // Fetch all data in parallel
+    const [overviewRows, queryRows, pageRows, dateRows, deviceRows] = await Promise.all([
       querySearchAnalytics(accessToken, property, startDate, endDate, [], 1),
-      querySearchAnalytics(accessToken, property, startDate, endDate, ['query'], 10),
+      querySearchAnalytics(accessToken, property, startDate, endDate, ['query'], 20),
       querySearchAnalytics(accessToken, property, startDate, endDate, ['page'], 10),
+      querySearchAnalytics(accessToken, property, startDate, endDate, ['date'], 90),
+      querySearchAnalytics(accessToken, property, startDate, endDate, ['device'], 3),
     ])
 
     const overview = overviewRows[0] ?? { clicks: 0, impressions: 0, ctr: 0, position: 0 }
@@ -150,6 +152,14 @@ export async function GET(request: Request) {
         ctr: Number((overview.ctr * 100).toFixed(1)),
         position: Number(overview.position.toFixed(1)),
       },
+      // Daily click/impression trend for chart
+      dateRows: dateRows.map(r => ({
+        date: r.keys[0],
+        clicks: r.clicks,
+        impressions: r.impressions,
+        ctr: Number((r.ctr * 100).toFixed(1)),
+        position: Number(r.position.toFixed(1)),
+      })),
       topQueries: queryRows.map(r => ({
         query: r.keys[0],
         clicks: r.clicks,
@@ -163,6 +173,11 @@ export async function GET(request: Request) {
         impressions: r.impressions,
         ctr: Number((r.ctr * 100).toFixed(1)),
         position: Number(r.position.toFixed(1)),
+      })),
+      devices: deviceRows.map(r => ({
+        device: r.keys[0],
+        clicks: r.clicks,
+        impressions: r.impressions,
       })),
     })
   } catch (err) {

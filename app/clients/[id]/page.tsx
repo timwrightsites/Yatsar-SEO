@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase-server'
 import { TrafficChart } from '@/components/charts/TrafficChart'
 import { BotActivity } from '@/components/dashboard/BotActivity'
 import { GSCPanel } from '@/components/client/GSCPanel'
+import { GSCChart } from '@/components/client/GSCChart'
 import { GSCMetricCards } from '@/components/client/GSCMetricCards'
 import { PageSpeedPanel } from '@/components/client/PageSpeedPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
@@ -128,14 +129,16 @@ export default async function ClientPage({ params }: Props) {
         )}
       </div>
 
-      {/* Traffic chart */}
-      {safeMetrics.length > 0 && (
+      {/* Chart — GSC live data preferred, falls back to stored metrics */}
+      {client.gsc_property ? (
+        <GSCChart property={client.gsc_property} />
+      ) : safeMetrics.length > 0 ? (
         <div className="bg-[#141414] border border-white/8 rounded-lg p-5 mb-6">
           <p className="text-white/40 text-xs mb-1">Organic Traffic</p>
           <p className="text-white font-semibold text-sm mb-4">Last 6 Months</p>
           <TrafficChart metrics={safeMetrics} />
         </div>
-      )}
+      ) : null}
 
       {/* GSC + PageSpeed — only shown when configured */}
       {client.gsc_property ? (
