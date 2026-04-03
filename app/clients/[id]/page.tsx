@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase-server'
 import { TrafficChart } from '@/components/charts/TrafficChart'
 import { BotActivity } from '@/components/dashboard/BotActivity'
 import { GSCPanel } from '@/components/client/GSCPanel'
+import { GSCMetricCards } from '@/components/client/GSCMetricCards'
 import { PageSpeedPanel } from '@/components/client/PageSpeedPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
 import { cn } from '@/lib/utils'
@@ -90,34 +91,51 @@ export default async function ClientPage({ params }: Props) {
         </span>
       </div>
 
-      {/* Metric cards */}
+      {/* Metric cards — use GSC live data when no stored metrics exist */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        {[
-          { label: 'Organic Traffic', value: latest?.organic_traffic?.toLocaleString() ?? '—', change: trafficChange },
-          { label: 'Keywords Ranked', value: latest?.keywords_ranked?.toLocaleString() ?? '—' },
-          { label: 'Backlinks',       value: latest?.backlinks?.toLocaleString() ?? '—' },
-          { label: 'Domain Rating',   value: latest?.domain_rating ?? '—' },
-        ].map(({ label, value, change }) => (
-          <div key={label} className="bg-[#141414] border border-white/8 rounded-lg p-4">
-            <p className="text-white/40 text-xs mb-2">{label}</p>
-            <div className="flex items-end gap-2">
-              <span className="text-white font-bold text-2xl">{value}</span>
-              {change !== undefined && (
-                <span className={cn('text-sm font-semibold pb-0.5', change >= 0 ? 'text-[#22c55e]' : 'text-red-400')}>
-                  {change >= 0 ? '+' : ''}{change}%
-                </span>
-              )}
-            </div>
-          </div>
-        ))}
+        {safeMetrics.length > 0 ? (
+          <>
+            {[
+              { label: 'Organic Traffic', value: latest?.organic_traffic?.toLocaleString() ?? '—', change: trafficChange },
+              { label: 'Keywords Ranked', value: latest?.keywords_ranked?.toLocaleString() ?? '—' },
+              { label: 'Backlinks',       value: latest?.backlinks?.toLocaleString() ?? '—' },
+              { label: 'Domain Rating',   value: latest?.domain_rating ?? '—' },
+            ].map(({ label, value, change }) => (
+              <div key={label} className="bg-[#141414] border border-white/8 rounded-lg p-4">
+                <p className="text-white/40 text-xs mb-2">{label}</p>
+                <div className="flex items-end gap-2">
+                  <span className="text-white font-bold text-2xl">{value}</span>
+                  {change !== undefined && (
+                    <span className={cn('text-sm font-semibold pb-0.5', change >= 0 ? 'text-[#22c55e]' : 'text-red-400')}>
+                      {change >= 0 ? '+' : ''}{change}%
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </>
+        ) : client.gsc_property ? (
+          <GSCMetricCards property={client.gsc_property} />
+        ) : (
+          <>
+            {['Organic Traffic', 'Keywords Ranked', 'Backlinks', 'Domain Rating'].map(label => (
+              <div key={label} className="bg-[#141414] border border-white/8 rounded-lg p-4">
+                <p className="text-white/40 text-xs mb-2">{label}</p>
+                <span className="text-white/20 font-bold text-2xl">—</span>
+              </div>
+            ))}
+          </>
+        )}
       </div>
 
       {/* Traffic chart */}
-      <div className="bg-[#141414] border border-white/8 rounded-lg p-5 mb-6">
-        <p className="text-white/40 text-xs mb-1">Organic Traffic</p>
-        <p className="text-white font-semibold text-sm mb-4">Last 6 Months</p>
-        <TrafficChart metrics={safeMetrics} />
-      </div>
+      {safeMetrics.length > 0 && (
+        <div className="bg-[#141414] border border-white/8 rounded-lg p-5 mb-6">
+          <p className="text-white/40 text-xs mb-1">Organic Traffic</p>
+          <p className="text-white font-semibold text-sm mb-4">Last 6 Months</p>
+          <TrafficChart metrics={safeMetrics} />
+        </div>
+      )}
 
       {/* GSC + PageSpeed — only shown when configured */}
       {client.gsc_property ? (
