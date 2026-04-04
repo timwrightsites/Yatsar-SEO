@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
 import { ChatInterface } from '@/components/chat/ChatInterface'
-import type { Client } from '@/types/database'
 
 export default async function MessagesPage() {
   const supabase = await createClient()
@@ -10,7 +9,7 @@ export default async function MessagesPage() {
     .from('clients')
     .select('id, name, domain, industry, status')
     .eq('status', 'active')
-    .order('name') as Promise<{ data: Pick<Client, 'id' | 'name' | 'domain' | 'industry' | 'status'>[] | null }>
+    .order('name')
 
   return <ChatInterface clients={clients ?? []} />
 }
