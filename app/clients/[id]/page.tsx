@@ -9,6 +9,7 @@ import { GSCChart } from '@/components/client/GSCChart'
 import { GSCMetricCards } from '@/components/client/GSCMetricCards'
 import { PageSpeedPanel } from '@/components/client/PageSpeedPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
+import AgentPanel from '@/components/client/AgentPanel'
 import { cn } from '@/lib/utils'
 import type { Client, BotConfig, Metric, ActivityLog } from '@/types/database'
 
@@ -205,6 +206,12 @@ export default async function ClientPage({ params }: Props) {
       </div>
 
       <BotActivity logs={(logs ?? []) as ActivityLog[]} />
+
+      {/* Agent Chat */}
+      <div className="mt-6">
+        <h2 className="text-white font-bold text-xl mb-4">AI Agents</h2>
+        <AgentPanel clientId={client.id} />
+      </div>
     </div>
   )
 }
