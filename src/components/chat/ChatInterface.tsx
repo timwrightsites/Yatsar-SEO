@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Send, ChevronDown, Bot, User, Loader } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Send, ChevronDown, Bot, User, Loader, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -21,13 +21,14 @@ interface Message {
   timestamp: Date
   clientName?: string
   agentId?: string
+  isPollUpdate?: boolean
 }
 
 interface Props {
   clients: Client[]
 }
 
-// ── Agents ─────────────────────────────────────────────────────────────────
+// ── Constants ──────────────────────────────────────────────────────────────
 
 const AGENTS = [
   { value: 'seo-co-strategist', label: 'SEO Co-Strategist' },
@@ -37,7 +38,7 @@ const AGENTS = [
 ]
 
 const QUICK_TASKS = [
-  'Summarise this week\'s SEO performance',
+  "Summarise this week's SEO performance",
   'Find keyword opportunities',
   'Run a technical site audit',
   'Create a content brief',
@@ -47,13 +48,26 @@ const QUICK_TASKS = [
   'Generate a monthly report',
 ]
 
+// Keywords that indicate a sub-agent was spawned and we should poll for results
+const SPAWN_KEYWORDS = [
+  'spawned', 'spawn', 'audit director', 'growth director', 'content director',
+  'running in the background', 'background task', 'report back', 'shortly',
+  'working on it', 'will check', 'checking now', 'haven\'t reported',
+]
+
+function detectsSpawn(text: string): boolean {
+  const lower = text.toLowerCase()
+  return SPAWN_KEYWORDS.some(kw => lower.includes(kw))
+}
+
+const POLL_PROMPT = "What are the results? Please share the full report."
+const POLL_INTERVAL_MS = 18000  // 18 seconds between polls
+const MAX_POLLS = 4             // stop after 4 attempts (~72s total)
+
 // ── Dropdown ───────────────────────────────────────────────────────────────
 
 function Dropdown({
-  label,
-  options,
-  value,
-  onChange,
+  label, options, value, onChange,
 }: {
   label: string
   options: { value: string; label: string }[]
@@ -85,9 +99,7 @@ function Dropdown({
 
       {open && (
         <div className="absolute bottom-full mb-2 left-0 w-52 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50">
-          <div className="px-3 py-2 text-xs text-white/30 border-b border-white/5">
-            {label}
-          </div>
+          <div className="px-3 py-2 text-xs text-white/30 border-b border-white/5">{label}</div>
           {options.map((opt) => (
             <button
               key={opt.value}
@@ -116,7 +128,6 @@ function MessageBubble({ msg, isStreaming }: { msg: Message; isStreaming: boolea
 
   return (
     <div className={cn('flex gap-3 max-w-3xl', isUser ? 'ml-auto flex-row-reverse' : 'mr-auto')}>
-      {/* Avatar */}
       <div className={cn(
         'w-8 h-8 rounded-full shrink-0 flex items-center justify-center mt-0.5',
         isUser ? 'bg-white/10' : 'bg-[#22c55e]/10 border border-[#22c55e]/20'
@@ -127,14 +138,12 @@ function MessageBubble({ msg, isStreaming }: { msg: Message; isStreaming: boolea
         }
       </div>
 
-      {/* Bubble */}
       <div>
         {!isUser && msg.agentId && (
           <div className="text-xs text-white/30 mb-1 ml-0.5">
             {agentLabel}
-            {msg.clientName && (
-              <span className="ml-1.5 text-white/20">· {msg.clientName}</span>
-            )}
+            {msg.clientName && <span className="ml-1.5 text-white/20">· {msg.clientName}</span>}
+            {msg.isPollUpdate && <span className="ml-1.5 text-[#22c55e]/40">· update</span>}
           </div>
         )}
         <div className={cn(
@@ -152,6 +161,29 @@ function MessageBubble({ msg, isStreaming }: { msg: Message; isStreaming: boolea
           {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Polling indicator ──────────────────────────────────────────────────────
+
+function PollingIndicator({ countdown, onCancel, onCheckNow }: {
+  countdown: number
+  onCancel: () => void
+  onCheckNow: () => void
+}) {
+  return (
+    <div className="flex items-center gap-3 py-2 px-4 rounded-xl bg-[#22c55e]/5 border border-[#22c55e]/15 text-sm max-w-sm">
+      <RefreshCw size={13} className="text-[#22c55e]/60 animate-spin shrink-0" />
+      <span className="text-white/40 flex-1">
+        Checking for results in {countdown}s
+      </span>
+      <button onClick={onCheckNow} className="text-[#22c55e]/60 hover:text-[#22c55e] text-xs transition-colors">
+        Now
+      </button>
+      <button onClick={onCancel} className="text-white/20 hover:text-white/50 text-xs transition-colors">
+        Cancel
+      </button>
     </div>
   )
 }
@@ -175,33 +207,43 @@ function EmptyState({ agentLabel }: { agentLabel: string }) {
 // ── Main component ─────────────────────────────────────────────────────────
 
 export function ChatInterface({ clients }: Props) {
-  const [messages, setMessages]         = useState<Message[]>([])
-  const [input, setInput]               = useState('')
-  const [clientId, setClientId]         = useState('')
-  const [agentId, setAgentId]           = useState('seo-co-strategist')
-  const [quickTask, setQuickTask]       = useState('')
-  const [isStreaming, setIsStreaming]   = useState(false)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const [messages, setMessages]       = useState<Message[]>([])
+  const [input, setInput]             = useState('')
+  const [clientId, setClientId]       = useState('')
+  const [agentId, setAgentId]         = useState('seo-co-strategist')
+  const [quickTask, setQuickTask]     = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [isPolling, setIsPolling]     = useState(false)
+  const [pollCountdown, setPollCountdown] = useState(0)
 
-  const clientOptions  = clients.map((c) => ({ value: c.id, label: c.name }))
+  const bottomRef    = useRef<HTMLDivElement>(null)
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollCountRef = useRef(0)
+  const messagesRef  = useRef<Message[]>([])
+
+  // Keep ref in sync for use inside async callbacks
+  useEffect(() => { messagesRef.current = messages }, [messages])
+
+  const clientOptions   = clients.map((c) => ({ value: c.id, label: c.name }))
   const quickTaskOptions = QUICK_TASKS.map((t) => ({ value: t, label: t }))
   const agentLabel = AGENTS.find(a => a.value === agentId)?.label ?? 'AI Agent'
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, isPolling])
 
-  async function handleSend() {
-    const text = (quickTask || input).trim()
+  // ── Core send function ─────────────────────────────────────────────────
+
+  const sendMessage = useCallback(async (
+    text: string,
+    opts: { isPollUpdate?: boolean } = {}
+  ) => {
     if (!text || isStreaming) return
-    if (!clientId) {
-      alert('Please select a client first.')
-      return
-    }
 
     const clientName = clients.find(c => c.id === clientId)?.name
 
-    const userMsg: Message = {
+    const userMsg: Message | null = opts.isPollUpdate ? null : {
       id: Date.now().toString(),
       role: 'user',
       content: text,
@@ -209,13 +251,12 @@ export function ChatInterface({ clients }: Props) {
       clientName,
     }
 
-    const nextMessages = [...messages, userMsg]
-    setMessages(nextMessages)
-    setInput('')
-    setQuickTask('')
+    const currentMessages = messagesRef.current
+    const nextMessages = userMsg ? [...currentMessages, userMsg] : currentMessages
+
+    if (userMsg) setMessages(nextMessages)
     setIsStreaming(true)
 
-    // Add empty assistant message to stream into
     const assistantId = (Date.now() + 1).toString()
     setMessages(prev => [...prev, {
       id: assistantId,
@@ -224,7 +265,10 @@ export function ChatInterface({ clients }: Props) {
       timestamp: new Date(),
       clientName,
       agentId,
+      isPollUpdate: opts.isPollUpdate,
     }])
+
+    let fullContent = ''
 
     try {
       const res = await fetch('/api/agent', {
@@ -239,7 +283,7 @@ export function ChatInterface({ clients }: Props) {
 
       if (!res.ok || !res.body) throw new Error('Agent request failed')
 
-      const reader = res.body.getReader()
+      const reader  = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
 
@@ -254,9 +298,10 @@ export function ChatInterface({ clients }: Props) {
         for (const line of lines) {
           if (line.startsWith('data: ') && line !== 'data: [DONE]') {
             try {
-              const data = JSON.parse(line.slice(6))
+              const data  = JSON.parse(line.slice(6))
               const chunk = data.choices?.[0]?.delta?.content || ''
               if (chunk) {
+                fullContent += chunk
                 setMessages(prev => {
                   const updated = [...prev]
                   const last = updated[updated.length - 1]
@@ -268,6 +313,20 @@ export function ChatInterface({ clients }: Props) {
           }
         }
       }
+
+      // If response suggests a sub-agent was spawned, start polling
+      if (!opts.isPollUpdate && detectsSpawn(fullContent)) {
+        startPolling()
+      } else if (opts.isPollUpdate) {
+        // Check if we got real results or another "still working" response
+        const stillWorking = detectsSpawn(fullContent) && pollCountRef.current < MAX_POLLS
+        if (stillWorking) {
+          schedulePoll()
+        } else {
+          stopPolling()
+        }
+      }
+
     } catch {
       setMessages(prev => {
         const updated = [...prev]
@@ -277,10 +336,72 @@ export function ChatInterface({ clients }: Props) {
         }
         return updated
       })
+      stopPolling()
     } finally {
       setIsStreaming(false)
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, agentId, clients, isStreaming])
+
+  // ── Polling logic ──────────────────────────────────────────────────────
+
+  function startPolling() {
+    pollCountRef.current = 0
+    setIsPolling(true)
+    schedulePoll()
+  }
+
+  function schedulePoll() {
+    if (pollCountRef.current >= MAX_POLLS) { stopPolling(); return }
+    pollCountRef.current += 1
+
+    setPollCountdown(Math.round(POLL_INTERVAL_MS / 1000))
+    countdownRef.current = setInterval(() => {
+      setPollCountdown(prev => {
+        if (prev <= 1) {
+          if (countdownRef.current) clearInterval(countdownRef.current)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    pollTimerRef.current = setTimeout(() => {
+      if (countdownRef.current) clearInterval(countdownRef.current)
+      sendMessage(POLL_PROMPT, { isPollUpdate: true })
+    }, POLL_INTERVAL_MS)
+  }
+
+  function stopPolling() {
+    setIsPolling(false)
+    setPollCountdown(0)
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current)
+    if (countdownRef.current) clearInterval(countdownRef.current)
+    pollTimerRef.current = null
+    countdownRef.current = null
+  }
+
+  function checkNow() {
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current)
+    if (countdownRef.current) clearInterval(countdownRef.current)
+    setPollCountdown(0)
+    sendMessage(POLL_PROMPT, { isPollUpdate: true })
+  }
+
+  // Cleanup on unmount
+  useEffect(() => () => stopPolling(), [])
+
+  // ── Handle send ────────────────────────────────────────────────────────
+
+  async function handleSend() {
+    const text = (quickTask || input).trim()
+    if (!text || isStreaming) return
+    if (!clientId) { alert('Please select a client first.'); return }
+    stopPolling()
+    setInput('')
+    setQuickTask('')
+    await sendMessage(text)
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -306,6 +427,18 @@ export function ChatInterface({ clients }: Props) {
                     isStreaming={isStreaming && i === messages.length - 1}
                   />
                 ))}
+
+                {/* Polling indicator */}
+                {isPolling && !isStreaming && (
+                  <div className="mr-auto ml-11">
+                    <PollingIndicator
+                      countdown={pollCountdown}
+                      onCancel={stopPolling}
+                      onCheckNow={checkNow}
+                    />
+                  </div>
+                )}
+
                 <div ref={bottomRef} />
               </>
             )
@@ -316,7 +449,6 @@ export function ChatInterface({ clients }: Props) {
       {/* Input bar */}
       <div className="shrink-0 flex flex-col items-center pb-8 px-6">
         <div className="w-full max-w-2xl space-y-2">
-          {/* Dropdown row */}
           <div className="flex items-center gap-2 flex-wrap">
             <Dropdown
               label="Select Client"
@@ -328,7 +460,7 @@ export function ChatInterface({ clients }: Props) {
               label="Agent"
               options={AGENTS}
               value={agentId}
-              onChange={(v) => { setAgentId(v); setMessages([]) }}
+              onChange={(v) => { setAgentId(v); setMessages([]); stopPolling() }}
             />
             <Dropdown
               label="Quick Tasks"
@@ -338,7 +470,6 @@ export function ChatInterface({ clients }: Props) {
             />
           </div>
 
-          {/* Text input */}
           <div className="flex items-center gap-3 bg-[#161616] border border-white/10 rounded-xl px-4 py-3">
             <input
               type="text"
