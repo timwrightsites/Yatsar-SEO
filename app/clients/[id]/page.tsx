@@ -9,6 +9,7 @@ import { GSCChart } from '@/components/client/GSCChart'
 import { GSCMetricCards } from '@/components/client/GSCMetricCards'
 import { PageSpeedPanel } from '@/components/client/PageSpeedPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
+import { ArchiveButton } from '@/components/client/ArchiveButton'
 import AgentPanel from '@/components/client/AgentPanel'
 import { cn } from '@/lib/utils'
 import type { Client, BotConfig, Metric, ActivityLog } from '@/types/database'
@@ -83,14 +84,22 @@ export default async function ClientPage({ params }: Props) {
             {client.industry && <><span>·</span><span>{client.industry}</span></>}
           </div>
         </div>
-        <span className={cn(
-          'text-xs border px-3 py-1 rounded-md font-medium capitalize',
-          client.status === 'active'  ? 'border-[#22c55e]/40 text-[#22c55e]' :
-          client.status === 'paused'  ? 'border-yellow-500/40 text-yellow-400' :
-                                        'border-red-500/40 text-red-400'
-        )}>
-          {client.status}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className={cn(
+            'text-xs border px-3 py-1 rounded-md font-medium capitalize',
+            client.status === 'active'   ? 'border-[#22c55e]/40 text-[#22c55e]' :
+            client.status === 'paused'   ? 'border-yellow-500/40 text-yellow-400' :
+            client.status === 'inactive' ? 'border-white/10 text-white/25' :
+                                           'border-red-500/40 text-red-400'
+          )}>
+            {client.status === 'inactive' ? 'Archived' : client.status}
+          </span>
+          <ArchiveButton
+            clientId={client.id}
+            clientName={client.name}
+            currentStatus={client.status}
+          />
+        </div>
       </div>
 
       {/* Metric cards — use GSC live data when no stored metrics exist */}
