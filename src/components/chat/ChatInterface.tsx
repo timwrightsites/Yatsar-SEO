@@ -277,11 +277,19 @@ export function ChatInterface({ clients }: Props) {
         body: JSON.stringify({
           clientId,
           agentId,
-          messages: nextMessages.map(m => ({ role: m.role, content: m.content })),
+          // Only send the last 30 messages to prevent oversized payloads on long conversations
+          messages: nextMessages.slice(-30).map(m => ({ role: m.role, content: m.content })),
         }),
       })
 
-      if (!res.ok || !res.body) throw new Error('Agent request failed')
+      if (!res.ok || !res.body) {
+        let errorDetail = `Status ${res.status}`
+        try {
+          const errBody = await res.json()
+          errorDetail = errBody.detail || errBody.error || errorDetail
+        } catch {}
+        throw new Error(errorDetail)
+      }
 
       const reader  = res.body.getReader()
       const decoder = new TextDecoder()
@@ -299,7 +307,12 @@ export function ChatInterface({ clients }: Props) {
           if (line.startsWith('data: ') && line !== 'data: [DONE]') {
             try {
               const data  = JSON.parse(line.slice(6))
-              const chunk = data.choices?.[0]?.delta?.content || ''
+              // Support multiple SSE response formats (delta, message, or text)
+              const chunk =
+                data.choices?.[0]?.delta?.content ||
+                data.choices?.[0]?.message?.content ||
+                data.choices?.[0]?.text ||
+                ''
               if (chunk) {
                 fullContent += chunk
                 setMessages(prev => {
@@ -327,12 +340,14 @@ export function ChatInterface({ clients }: Props) {
         }
       }
 
-    } catch {
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+      console.error('[ChatInterface] Agent error:', errorMsg)
       setMessages(prev => {
         const updated = [...prev]
         updated[updated.length - 1] = {
           ...updated[updated.length - 1],
-          content: 'Something went wrong. Please try again.',
+          content: `⚠️ ${errorMsg}\n\nTry shortening your message or starting a new conversation.`,
         }
         return updated
       })
@@ -470,20 +485,27 @@ export function ChatInterface({ clients }: Props) {
             />
           </div>
 
-          <div className="flex items-center gap-3 bg-[#161616] border border-white/10 rounded-xl px-4 py-3">
-            <input
-              type="text"
+          <div className="flex items-start gap-3 bg-[#161616] border border-white/10 rounded-xl px-4 py-3">
+            <textarea
+              rows={1}
               value={quickTask || input}
-              onChange={(e) => { setQuickTask(''); setInput(e.target.value) }}
+              onChange={(e) => {
+                setQuickTask('')
+                setInput(e.target.value)
+                // Auto-grow: reset height then set to scrollHeight
+                e.target.style.height = 'auto'
+                e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'
+              }}
               onKeyDown={handleKeyDown}
-              placeholder={clientId ? `Ask ${agentLabel}...` : 'Select a client to get started'}
-              className="flex-1 bg-transparent text-white/80 text-sm placeholder:text-white/25 outline-none"
+              placeholder={clientId ? `Ask ${agentLabel}… (Shift+Enter for new line)` : 'Select a client to get started'}
+              className="flex-1 bg-transparent text-white/80 text-sm placeholder:text-white/25 outline-none resize-none leading-relaxed overflow-y-auto"
+              style={{ minHeight: '24px', maxHeight: '200px' }}
             />
             <button
               onClick={handleSend}
               disabled={isStreaming || (!input.trim() && !quickTask) || !clientId}
               className={cn(
-                'w-8 h-8 flex items-center justify-center rounded-lg transition-all',
+                'w-8 h-8 flex items-center justify-center rounded-lg transition-all shrink-0 mt-0.5',
                 isStreaming || (!input.trim() && !quickTask) || !clientId
                   ? 'text-white/20 cursor-not-allowed'
                   : 'text-white/60 hover:text-white hover:bg-white/8'
