@@ -87,9 +87,15 @@ function daysAgo(n: number) {
 // ── Route Handler ─────────────────────────────────────────────────────────────
 
 export async function GET(request: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Allow agent calls authenticated with the gateway token
+  const agentKey = request.headers.get('x-agent-key')
+  const isAgentCall = agentKey && agentKey === process.env.OPENCLAW_GATEWAY_TOKEN
+
+  if (!isAgentCall) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   const { searchParams } = new URL(request.url)
   const property = searchParams.get('property')
