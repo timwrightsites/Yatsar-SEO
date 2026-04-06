@@ -173,24 +173,32 @@ export async function GET(request: Request) {
     const data = await res.json() as {
       inspectionResult?: {
         indexStatusResult?: {
-          verdict:        string
-          indexingState:  string
-          lastCrawlTime?: string
-          crawledAs?:     string
-          robotsTxtState?:string
-          coverageState?: string
+          verdict?:        string
+          indexingState?:  string
+          lastCrawlTime?:  string
+          crawledAs?:      string
+          robotsTxtState?: string
+          coverageState?:  string
         }
       }
     }
 
-    const result = data.inspectionResult?.indexStatusResult ?? {}
+    type IndexStatusResult = {
+      verdict?:        string
+      indexingState?:  string
+      lastCrawlTime?:  string
+      crawledAs?:      string
+      robotsTxtState?: string
+      coverageState?:  string
+    }
+    const result: IndexStatusResult = data.inspectionResult?.indexStatusResult ?? {}
     return NextResponse.json({
       url,
-      verdict:        result.verdict       ?? 'UNKNOWN',
-      indexingState:  result.indexingState ?? 'UNKNOWN',
-      lastCrawlTime:  result.lastCrawlTime ?? null,
-      crawledAs:      result.crawledAs     ?? null,
-      coverageState:  result.coverageState ?? null,
+      verdict:        result.verdict        ?? 'UNKNOWN',
+      indexingState:  result.indexingState  ?? 'UNKNOWN',
+      lastCrawlTime:  result.lastCrawlTime  ?? null,
+      crawledAs:      result.crawledAs      ?? null,
+      coverageState:  result.coverageState  ?? null,
       robotsTxtState: result.robotsTxtState ?? null,
     })
   } catch (err) {
