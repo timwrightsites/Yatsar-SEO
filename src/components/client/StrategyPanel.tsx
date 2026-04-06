@@ -162,6 +162,16 @@ export function StrategyPanel({ clientId }: { clientId: string }) {
 
   useEffect(() => { load() }, [load])
 
+  // Re-fetch when the agent saves a new strategy (fires from AgentPanel)
+  useEffect(() => {
+    const onStrategyUpdated = () => {
+      // Small delay so the DB write from the agent route has time to commit
+      setTimeout(() => load(), 1500)
+    }
+    window.addEventListener('strategy-updated', onStrategyUpdated)
+    return () => window.removeEventListener('strategy-updated', onStrategyUpdated)
+  }, [load])
+
   const updateTaskStatus = async (taskId: string, status: TaskStatus) => {
     const res = await fetch(`/api/strategies/tasks/${taskId}`, {
       method: 'PATCH',

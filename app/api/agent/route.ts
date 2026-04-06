@@ -7,6 +7,40 @@ export const maxDuration = 300 // 5 minutes — allows long agent responses
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN
 
+// ── Strategy format instruction injected into agent context ────
+const STRATEGY_SYSTEM_INSTRUCTION = `
+IMPORTANT: When you define, propose, or finalize a strategy for a client — including tasks,
+phases, or action items — you MUST include a structured block at the END of your response
+using this exact format so it is saved to the dashboard automatically:
+
+:::strategy
+{
+  "name": "Strategy Name Here",
+  "description": "One-line summary of the strategy",
+  "tasks": [
+    {
+      "title": "Task title",
+      "description": "What needs to be done",
+      "type": "content|technical|link|keyword|meta|other",
+      "priority": "high|medium|low",
+      "due_date": "YYYY-MM-DD or null",
+      "assigned_agent": "agent name or null",
+      "notes": "optional notes"
+    }
+  ]
+}
+:::
+
+Rules for the :::strategy block:
+- Only include it when a strategy or set of tasks has been agreed upon or finalized
+- The JSON must be valid — no trailing commas, no comments
+- "type" must be one of: content, technical, link, keyword, meta, other
+- "priority" must be one of: high, medium, low
+- "due_date" should be YYYY-MM-DD format or null
+- Include as many tasks as needed
+- This block will be parsed automatically — do NOT try to call any API yourself
+`.trim()
+
 export async function POST(req: NextRequest) {
   // ── 1. Parse request body safely ──────────────────────────
   let clientId: string
@@ -65,7 +99,13 @@ export async function POST(req: NextRequest) {
     console.warn('[agent] Failed to log task start:', err)
   }
 
-  // ── 5. Call OpenClaw with streaming ───────────────────────
+  // ── 5. Inject strategy format instruction into messages ────
+  const augmentedMessages = [
+    { role: 'system', content: STRATEGY_SYSTEM_INSTRUCTION },
+    ...messages,
+  ]
+
+  // ── 6. Call OpenClaw with streaming ───────────────────────
   let upstreamRes: Response
   try {
     upstreamRes = await fetch(`${GATEWAY_URL}/v1/chat/completions`, {
@@ -76,7 +116,7 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: `openclaw/${agentId}`,
-        messages,
+        messages: augmentedMessages,
         stream: true,
       }),
     })
@@ -100,7 +140,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // ── 6. Stream response back, accumulate for logging ───────
+  // ── 7. Stream response back, accumulate for logging + strategy extraction ───
   const stream = new ReadableStream({
     async start(controller) {
       const reader = upstreamRes.body!.getReader()
@@ -157,6 +197,10 @@ export async function POST(req: NextRequest) {
             })
             .eq('id', taskId)
         }
+
+        // ── 8. Extract and save strategy if present ──────────
+        await extractAndSaveStrategy(supabase, clientId, agentId, fullResponse)
+
       } catch (err) {
         console.error('[agent] Stream error:', err)
         await updateTaskStatus(supabase, taskId, 'error')
@@ -190,5 +234,94 @@ async function updateTaskStatus(
       .eq('id', taskId)
   } catch (err) {
     console.warn('[agent] Failed to update task status:', err)
+  }
+}
+
+// ── Helper: extract :::strategy block and write to Supabase ──
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function extractAndSaveStrategy(
+  supabase: any,
+  clientId: string,
+  agentId: string,
+  responseText: string,
+) {
+  // Look for :::strategy ... ::: block
+  const match = responseText.match(/:::strategy\s*\n([\s\S]*?)\n:::/)
+  if (!match) return // No strategy block — nothing to do
+
+  let parsed: {
+    name: string
+    description?: string
+    tasks?: {
+      title: string
+      description?: string
+      type?: string
+      priority?: string
+      due_date?: string | null
+      assigned_agent?: string | null
+      notes?: string | null
+    }[]
+  }
+
+  try {
+    parsed = JSON.parse(match[1])
+  } catch (err) {
+    console.warn('[agent] Found :::strategy block but JSON was invalid:', err)
+    return
+  }
+
+  if (!parsed.name) {
+    console.warn('[agent] Strategy block missing "name" field — skipping')
+    return
+  }
+
+  const validTypes = ['content', 'technical', 'link', 'keyword', 'meta', 'other']
+  const validPriorities = ['high', 'medium', 'low']
+
+  try {
+    // 1. Create the strategy row
+    const { data: strategy, error: stratErr } = await supabase
+      .from('strategies')
+      .insert({
+        client_id: clientId,
+        name: parsed.name,
+        description: parsed.description || null,
+      })
+      .select('id')
+      .single()
+
+    if (stratErr || !strategy) {
+      console.error('[agent] Failed to create strategy:', stratErr)
+      return
+    }
+
+    console.log(`[agent] Created strategy "${parsed.name}" (${strategy.id}) for client ${clientId}`)
+
+    // 2. Insert tasks if any
+    if (parsed.tasks && parsed.tasks.length > 0) {
+      const taskRows = parsed.tasks.map((t) => ({
+        strategy_id: strategy.id,
+        client_id: clientId,
+        title: t.title,
+        description: t.description || null,
+        type: validTypes.includes(t.type || '') ? t.type : 'other',
+        priority: validPriorities.includes(t.priority || '') ? t.priority : 'medium',
+        due_date: t.due_date || null,
+        assigned_agent: t.assigned_agent || agentId,
+        notes: t.notes || null,
+      }))
+
+      const { error: tasksErr } = await supabase
+        .from('strategy_tasks')
+        .insert(taskRows)
+
+      if (tasksErr) {
+        console.error('[agent] Failed to insert strategy tasks:', tasksErr)
+      } else {
+        console.log(`[agent] Inserted ${taskRows.length} tasks for strategy "${parsed.name}"`)
+      }
+    }
+  } catch (err) {
+    console.error('[agent] Unexpected error saving strategy:', err)
   }
 }

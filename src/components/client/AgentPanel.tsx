@@ -96,6 +96,9 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
       })
     } finally {
       setIsStreaming(false)
+      // Signal StrategyPanel (and any other listeners) to refresh —
+      // the agent may have included a :::strategy block that was saved server-side
+      window.dispatchEvent(new CustomEvent('strategy-updated'))
     }
   }
 
