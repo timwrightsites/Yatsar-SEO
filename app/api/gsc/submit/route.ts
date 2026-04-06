@@ -12,7 +12,7 @@ async function isAuthorized(request: Request): Promise<boolean> {
   return !!user
 }
 
-// ── Google service account JWT (Indexing API scope) ───────────────────────────
+// ── Google service account JWT ────────────────────────────────────────────────
 
 function base64url(input: string): string {
   return Buffer.from(input).toString('base64url')
@@ -74,7 +74,7 @@ async function submitUrl(token: string, url: string): Promise<IndexResult> {
   }
 }
 
-// ── Route handler ─────────────────────────────────────────────────────────────
+// ── POST — submit URLs for indexing ──────────────────────────────────────────
 
 export async function POST(request: Request) {
   if (!await isAuthorized(request)) {
@@ -93,8 +93,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing or empty urls array' }, { status: 400 })
   }
 
-  // Cap at 200 URLs per call (Google Indexing API rate limit: 200/day)
-  const urlsToSubmit = urls.slice(0, 200)
+  const urlsToSubmit = urls.slice(0, 200) // Google Indexing API: 200/day limit
 
   const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
   if (!saJson) return NextResponse.json({ error: 'GOOGLE_SERVICE_ACCOUNT_JSON not set' }, { status: 500 })
@@ -105,17 +104,12 @@ export async function POST(request: Request) {
 
   try {
     const token   = await getAccessToken(sa.client_email, sa.private_key, 'https://www.googleapis.com/auth/indexing')
-
-    // Submit all URLs in parallel (Google handles deduplication)
     const results = await Promise.all(urlsToSubmit.map(url => submitUrl(token, url)))
-
-    const submitted = results.filter(r => r.status === 'submitted').length
-    const errors    = results.filter(r => r.status === 'error')
 
     return NextResponse.json({
       total:     urlsToSubmit.length,
-      submitted,
-      errors:    errors.length,
+      submitted: results.filter(r => r.status === 'submitted').length,
+      errors:    results.filter(r => r.status === 'error').length,
       results,
     })
   } catch (err) {
@@ -123,8 +117,7 @@ export async function POST(request: Request) {
   }
 }
 
-// ── URL inspection endpoint (GET) ─────────────────────────────────────────────
-// Check Google's current view of a single URL
+// ── GET — inspect a single URL ────────────────────────────────────────────────
 
 export async function GET(request: Request) {
   if (!await isAuthorized(request)) {
@@ -155,14 +148,8 @@ export async function GET(request: Request) {
 
     const res = await fetch('https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', {
       method: 'POST',
-      headers: {
-        Authorization:  `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        inspectionUrl: url,
-        siteUrl:       property,
-      }),
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inspectionUrl: url, siteUrl: property }),
     })
 
     if (!res.ok) {
@@ -192,6 +179,7 @@ export async function GET(request: Request) {
       coverageState?:  string
     }
     const result: IndexStatusResult = data.inspectionResult?.indexStatusResult ?? {}
+
     return NextResponse.json({
       url,
       verdict:        result.verdict        ?? 'UNKNOWN',

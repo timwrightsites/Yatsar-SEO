@@ -114,7 +114,7 @@ export function IndexationPanel({ property, domain }: Props) {
     ))
 
     try {
-      const res = await fetch(`/api/gsc/index?url=${encodeURIComponent(url)}&property=${encodeURIComponent(property)}`)
+      const res = await fetch(`/api/gsc/submit?url=${encodeURIComponent(url)}&property=${encodeURIComponent(property)}`)
       const data = await res.json()
 
       if (data.error) {
@@ -148,7 +148,7 @@ export function IndexationPanel({ property, domain }: Props) {
     ))
 
     try {
-      const res  = await fetch('/api/gsc/index', {
+      const res  = await fetch('/api/gsc/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ urls: [url] }),
@@ -184,7 +184,7 @@ export function IndexationPanel({ property, domain }: Props) {
     ))
 
     try {
-      const res  = await fetch('/api/gsc/index', {
+      const res  = await fetch('/api/gsc/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ urls: targets }),
