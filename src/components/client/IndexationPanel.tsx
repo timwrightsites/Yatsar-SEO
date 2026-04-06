@@ -374,12 +374,11 @@ export function IndexationPanel({ property, domain }: Props) {
 
               {/* Inspect button */}
               <div className="flex justify-end">
-                {page.inspectStatus === 'checking' ? (
+                {(page.inspectStatus as string) === 'checking' ? (
                   <Loader2 size={11} className="animate-spin text-white/30" />
                 ) : (
                   <button
                     onClick={() => inspectUrl(page.url)}
-                    disabled={page.inspectStatus === 'checking'}
                     className="flex items-center gap-1 px-2 py-1 text-[10px] text-white/30 border border-white/8 rounded hover:text-white/60 hover:border-white/15 transition-all">
                     <Search size={9} /> Check
                   </button>
