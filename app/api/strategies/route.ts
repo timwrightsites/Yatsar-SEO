@@ -49,7 +49,8 @@ export async function GET(request: Request) {
 // POST /api/strategies — create a strategy
 export async function POST(request: Request) {
   const { authorized } = await getUser(request)
-  if (!authorized) return NextResponse.json({ error: 'Unauthorized', debug: agentDebug(request) }, { status: 401 })
+  const dbg = agentDebug(request)
+  return NextResponse.json({ error: 'Unauthorized-v3', debug: dbg }, { status: 401 })
 
   const body = await request.json()
   const { client_id, name, description } = body
