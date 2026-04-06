@@ -207,14 +207,15 @@ function EmptyState({ agentLabel }: { agentLabel: string }) {
 // ── Main component ─────────────────────────────────────────────────────────
 
 export function ChatInterface({ clients }: Props) {
-  const [messages, setMessages]       = useState<Message[]>([])
-  const [input, setInput]             = useState('')
-  const [clientId, setClientId]       = useState('')
-  const [agentId, setAgentId]         = useState('seo-co-strategist')
-  const [quickTask, setQuickTask]     = useState('')
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [isPolling, setIsPolling]     = useState(false)
+  const [messages, setMessages]           = useState<Message[]>([])
+  const [input, setInput]                 = useState('')
+  const [clientId, setClientId]           = useState('')
+  const [agentId, setAgentId]             = useState('seo-co-strategist')
+  const [quickTask, setQuickTask]         = useState('')
+  const [isStreaming, setIsStreaming]     = useState(false)
+  const [isPolling, setIsPolling]         = useState(false)
   const [pollCountdown, setPollCountdown] = useState(0)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
   const bottomRef    = useRef<HTMLDivElement>(null)
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -224,6 +225,26 @@ export function ChatInterface({ clients }: Props) {
 
   // Keep ref in sync for use inside async callbacks
   useEffect(() => { messagesRef.current = messages }, [messages])
+
+  // ── Load persisted history when client or agent changes ───────────────
+  useEffect(() => {
+    if (!clientId) { setMessages([]); return }
+    setIsLoadingHistory(true)
+    fetch(`/api/chat-messages?clientId=${clientId}&agentId=${agentId}&limit=50`)
+      .then(r => r.json())
+      .then((rows: { id: string; role: string; content: string; created_at: string }[]) => {
+        if (!Array.isArray(rows)) return
+        setMessages(rows.map(r => ({
+          id: r.id,
+          role: r.role as 'user' | 'assistant',
+          content: r.content,
+          timestamp: new Date(r.created_at),
+          agentId,
+        })))
+      })
+      .catch(() => setMessages([]))
+      .finally(() => setIsLoadingHistory(false))
+  }, [clientId, agentId])
 
   const clientOptions   = clients.map((c) => ({ value: c.id, label: c.name }))
   const quickTaskOptions = QUICK_TASKS.map((t) => ({ value: t, label: t }))
@@ -254,7 +275,15 @@ export function ChatInterface({ clients }: Props) {
     const currentMessages = messagesRef.current
     const nextMessages = userMsg ? [...currentMessages, userMsg] : currentMessages
 
-    if (userMsg) setMessages(nextMessages)
+    if (userMsg) {
+      setMessages(nextMessages)
+      // Persist user message
+      fetch('/api/chat-messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, agentId, role: 'user', content: text }),
+      }).catch(() => {}) // non-blocking
+    }
     setIsStreaming(true)
 
     const assistantId = (Date.now() + 1).toString()
@@ -325,6 +354,15 @@ export function ChatInterface({ clients }: Props) {
             } catch {}
           }
         }
+      }
+
+      // Persist assistant reply (only if we got real content)
+      if (fullContent && !opts.isPollUpdate) {
+        fetch('/api/chat-messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clientId, agentId, role: 'assistant', content: fullContent }),
+        }).catch(() => {}) // non-blocking
       }
 
       // If response suggests a sub-agent was spawned, start polling
@@ -431,7 +469,13 @@ export function ChatInterface({ clients }: Props) {
       {/* Chat area */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto w-full px-6 py-8 flex flex-col gap-6 min-h-full">
-          {messages.length === 0
+          {isLoadingHistory
+            ? (
+              <div className="flex-1 flex items-center justify-center">
+                <Loader className="w-5 h-5 animate-spin text-white/30" />
+              </div>
+            )
+            : messages.length === 0
             ? <EmptyState agentLabel={agentLabel} />
             : (
               <>
@@ -475,7 +519,7 @@ export function ChatInterface({ clients }: Props) {
               label="Agent"
               options={AGENTS}
               value={agentId}
-              onChange={(v) => { setAgentId(v); setMessages([]); stopPolling() }}
+              onChange={(v) => { setAgentId(v); stopPolling() }}
             />
             <Dropdown
               label="Quick Tasks"
@@ -483,6 +527,19 @@ export function ChatInterface({ clients }: Props) {
               value={quickTask}
               onChange={setQuickTask}
             />
+            {messages.length > 0 && clientId && (
+              <button
+                onClick={async () => {
+                  if (!confirm('Clear conversation history for this client?')) return
+                  await fetch(`/api/chat-messages?clientId=${clientId}&agentId=${agentId}`, { method: 'DELETE' })
+                  setMessages([])
+                }}
+                className="text-xs text-white/30 hover:text-white/60 transition-colors ml-auto shrink-0"
+                title="Clear chat history"
+              >
+                Clear history
+              </button>
+            )}
           </div>
 
           <div className="flex items-start gap-3 bg-[#161616] border border-white/10 rounded-xl px-4 py-3">

@@ -68,6 +68,18 @@ CREATE TABLE IF NOT EXISTS client_knowledge_bases (
 );
 
 -- ============================================================
+-- CHAT MESSAGES (persisted conversation history per client)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  client_id    UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  agent_id     TEXT NOT NULL DEFAULT 'seo-co-strategist',
+  role         TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content      TEXT NOT NULL
+);
+
+-- ============================================================
 -- AGENT TASKS (conversation + task logging)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS agent_tasks (
@@ -107,6 +119,7 @@ CREATE INDEX IF NOT EXISTS idx_bot_configs_client ON bot_configs(client_id);
 CREATE INDEX IF NOT EXISTS idx_activity_logs_client ON activity_logs(client_id);
 CREATE INDEX IF NOT EXISTS idx_activity_logs_created ON activity_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_metrics_client_month ON metrics(client_id, month DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_client_agent ON chat_messages(client_id, agent_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_tasks_client ON agent_tasks(client_id);
 CREATE INDEX IF NOT EXISTS idx_agent_tasks_created ON agent_tasks(created_at DESC);
 
@@ -118,6 +131,7 @@ ALTER TABLE bot_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE client_knowledge_bases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE metrics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_tasks ENABLE ROW LEVEL SECURITY;
 
 -- Allow all operations for authenticated users (adjust when you add auth)
