@@ -192,7 +192,10 @@ export function IndexationPanel({ property, domain }: Props) {
       const data = await res.json()
 
       if (data.results) {
-        const resultMap = new Map(data.results.map((r: { url: string; status: string; message?: string }) => [r.url, r]))
+        type IndexResult = { url: string; status: string; message?: string }
+        const resultMap = new Map<string, IndexResult>(
+          data.results.map((r: IndexResult) => [r.url, r])
+        )
         setPages(prev => prev.map(p => {
           const result = resultMap.get(p.url)
           if (!result) return p
