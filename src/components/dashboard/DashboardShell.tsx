@@ -64,9 +64,19 @@ export function DashboardShell({ clients, logs, mrrDisplay }: Props) {
 
       {visibleClients.length > 0 ? (
         <div className="grid grid-cols-4 gap-4 mb-10">
-          {visibleClients.map((client) => (
-            <ClientCard key={client.id} client={client} />
-          ))}
+          {visibleClients.map((client) => {
+            const lastLog = logs
+              .filter(l => l.client_id === client.id)
+              .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+            return (
+              <ClientCard
+                key={client.id}
+                client={client}
+                lastActivity={lastLog?.created_at ?? null}
+                lastActivityStatus={lastLog?.status ?? null}
+              />
+            )
+          })}
         </div>
       ) : (
         <div className="flex items-center justify-center py-20 mb-10">
