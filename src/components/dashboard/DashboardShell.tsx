@@ -4,18 +4,23 @@ import { useState } from 'react'
 import { ClientCard } from '@/components/dashboard/ClientCard'
 import { BotActivity } from '@/components/dashboard/BotActivity'
 import { AddClientModal } from '@/components/dashboard/AddClientModal'
+import { ContentApprovalsList } from '@/components/dashboard/ContentApprovalsList'
 import { cn } from '@/lib/utils'
 import type { Client, ActivityLog } from '@/types/database'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Draft = any
 
 interface Props {
   clients: Client[]
   logs: ActivityLog[]
+  drafts: Draft[]
   mrrDisplay: string
 }
 
 type Tab = 'active' | 'archived'
 
-export function DashboardShell({ clients, logs, mrrDisplay }: Props) {
+export function DashboardShell({ clients, logs, drafts, mrrDisplay }: Props) {
   const [showAdd, setShowAdd] = useState(false)
   const [tab, setTab] = useState<Tab>('active')
 
@@ -86,7 +91,24 @@ export function DashboardShell({ clients, logs, mrrDisplay }: Props) {
         </div>
       )}
 
-      {tab === 'active' && <BotActivity logs={logs} />}
+      {tab === 'active' && (
+        <>
+          {/* Content approvals */}
+          <div className="bg-[#141414] border border-white/8 rounded-xl p-5 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white font-bold text-lg">Content Approvals</h2>
+              {drafts.filter((d: Draft) => d.status === 'pending_review').length > 0 && (
+                <span className="text-[10px] bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded-full font-medium">
+                  {drafts.filter((d: Draft) => d.status === 'pending_review').length} pending
+                </span>
+              )}
+            </div>
+            <ContentApprovalsList drafts={drafts} />
+          </div>
+
+          <BotActivity logs={logs} />
+        </>
+      )}
 
       {showAdd && <AddClientModal onClose={() => setShowAdd(false)} />}
     </div>

@@ -10,12 +10,14 @@ import { GSCMetricCards } from '@/components/client/GSCMetricCards'
 import { PageSpeedPanel } from '@/components/client/PageSpeedPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
 import { ArchiveButton } from '@/components/client/ArchiveButton'
+import { ContentSection } from '@/components/client/ContentSection'
 import AgentPanel from '@/components/client/AgentPanel'
 import { cn } from '@/lib/utils'
 import type { Client, BotConfig, Metric, ActivityLog } from '@/types/database'
 
 interface Props {
   params: Promise<{ id: string }>
+  searchParams?: unknown
 }
 
 const botMeta: Record<string, { label: string; desc: string; dot: string }> = {
@@ -32,8 +34,11 @@ const statusBadge: Record<string, { label: string; className: string }> = {
   error:   { label: 'Error',  className: 'border-red-500   text-red-400'    },
 }
 
-export default async function ClientPage({ params }: Props) {
+export default async function ClientPage({ params, searchParams }: Props) {
   const { id } = await params
+  const sp = await (searchParams as unknown as Promise<Record<string, string>>)
+  const highlightContentId = sp?.content ?? null
+
   const supabase = await createClient()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,11 +49,13 @@ export default async function ClientPage({ params }: Props) {
     { data: bots },
     { data: logs },
     { data: metrics },
+    { data: drafts },
   ] = await Promise.all([
     db.from('clients').select('*').eq('id', id).single() as Promise<{ data: Client & { gsc_property: string | null; pagespeed_url: string | null } | null }>,
     db.from('bot_configs').select('*').eq('client_id', id) as Promise<{ data: BotConfig[] | null }>,
     db.from('activity_logs').select('*').eq('client_id', id).order('created_at', { ascending: false }).limit(20) as Promise<{ data: ActivityLog[] | null }>,
     db.from('metrics').select('*').eq('client_id', id).order('month') as Promise<{ data: Metric[] | null }>,
+    db.from('content_drafts').select('*').eq('client_id', id).order('created_at', { ascending: false }) as Promise<{ data: unknown[] | null }>,
   ])
 
   if (!client) notFound()
@@ -215,6 +222,15 @@ export default async function ClientPage({ params }: Props) {
       </div>
 
       <BotActivity logs={(logs ?? []) as ActivityLog[]} />
+
+      {/* Content drafts */}
+      <div className="mt-6 mb-6">
+        <ContentSection
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          initialDrafts={(drafts ?? []) as any[]}
+          highlightId={highlightContentId}
+        />
+      </div>
 
       {/* Agent Chat */}
       <div className="mt-6">

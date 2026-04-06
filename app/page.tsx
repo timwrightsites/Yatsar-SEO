@@ -7,9 +7,10 @@ export default async function DashboardPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
 
-  const [{ data: clients }, { data: logs }] = await Promise.all([
+  const [{ data: clients }, { data: logs }, { data: drafts }] = await Promise.all([
     db.from('clients').select('*').order('created_at') as Promise<{ data: Client[] | null }>,
     db.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(20) as Promise<{ data: ActivityLog[] | null }>,
+    db.from('content_drafts').select('*, clients(name)').order('created_at', { ascending: false }) as Promise<{ data: unknown[] | null }>,
   ])
 
   const activeClients = (clients ?? []).filter((c: Client) => c.status === 'active')
@@ -22,6 +23,7 @@ export default async function DashboardPage() {
     <DashboardShell
       clients={clients ?? []}
       logs={(logs ?? []) as ActivityLog[]}
+      drafts={(drafts ?? []) as any[]}
       mrrDisplay={mrrDisplay}
     />
   )
