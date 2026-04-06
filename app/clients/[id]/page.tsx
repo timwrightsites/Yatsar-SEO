@@ -9,6 +9,7 @@ import { GSCChart } from '@/components/client/GSCChart'
 import { GSCMetricCards } from '@/components/client/GSCMetricCards'
 import { PageSpeedPanel } from '@/components/client/PageSpeedPanel'
 import { IndexationPanel } from '@/components/client/IndexationPanel'
+import { StrategyPanel } from '@/components/client/StrategyPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
 import { ArchiveButton } from '@/components/client/ArchiveButton'
 import { ContentSection } from '@/components/client/ContentSection'
@@ -241,6 +242,11 @@ export default async function ClientPage({ params, searchParams }: Props) {
           initialDrafts={(drafts ?? []) as any[]}
           highlightId={highlightContentId}
         />
+      </div>
+
+      {/* Strategy kanban */}
+      <div className="mt-6 mb-6">
+        <StrategyPanel clientId={client.id} />
       </div>
 
       {/* Agent Chat */}
