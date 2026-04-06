@@ -57,6 +57,7 @@ export function IndexationPanel({ property, domain }: Props) {
   const [filter, setFilter]       = useState<'all' | 'undetected'>('undetected')
   const [indexingAll, setIndexingAll] = useState(false)
   const [lastIndexed, setLastIndexed] = useState<Date | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   // ── Load sitemap + GSC pages ───────────────────────────────────────────────
 
@@ -177,6 +178,7 @@ export function IndexationPanel({ property, domain }: Props) {
     if (targets.length === 0) return
 
     setIndexingAll(true)
+    setSubmitError(null)
 
     // Mark all as submitting
     setPages(prev => prev.map(p =>
@@ -190,6 +192,14 @@ export function IndexationPanel({ property, domain }: Props) {
         body: JSON.stringify({ urls: targets }),
       })
       const data = await res.json()
+
+      if (data.error) {
+        setSubmitError(data.error)
+        setPages(prev => prev.map(p =>
+          targets.includes(p.url) ? { ...p, submitStatus: 'error', submitMessage: data.error } : p
+        ))
+        return
+      }
 
       if (data.results) {
         type IndexResult = { url: string; status: string; message?: string }
@@ -407,6 +417,17 @@ export function IndexationPanel({ property, domain }: Props) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Error detail panel */}
+      {submitError && (
+        <div className="mt-4 p-3 bg-red-400/5 border border-red-400/20 rounded-lg">
+          <p className="text-red-400 text-xs font-medium mb-1">Indexing API error</p>
+          <p className="text-red-400/70 text-[11px] font-mono break-all">{submitError}</p>
+          <p className="text-white/30 text-[11px] mt-2">
+            Common causes: (1) Indexing API not enabled in Google Cloud Console — go to console.cloud.google.com → APIs &amp; Services → enable &quot;Web Search Indexing API&quot;. (2) Service account needs Owner-level access in GSC — go to GSC → Settings → Users and permissions → add the service account email as Owner.
+          </p>
         </div>
       )}
 
