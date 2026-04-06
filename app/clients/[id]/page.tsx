@@ -8,6 +8,7 @@ import { GSCPanel } from '@/components/client/GSCPanel'
 import { GSCChart } from '@/components/client/GSCChart'
 import { GSCMetricCards } from '@/components/client/GSCMetricCards'
 import { PageSpeedPanel } from '@/components/client/PageSpeedPanel'
+import { IndexationPanel } from '@/components/client/IndexationPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
 import { ArchiveButton } from '@/components/client/ArchiveButton'
 import { ContentSection } from '@/components/client/ContentSection'
@@ -161,6 +162,16 @@ export default async function ClientPage({ params, searchParams }: Props) {
       {client.gsc_property ? (
         <div className="mb-6">
           <GSCPanel property={client.gsc_property} />
+        </div>
+      ) : null}
+
+      {/* Indexation panel — sitemap vs GSC comparison + index button */}
+      {client.gsc_property && client.domain ? (
+        <div className="mb-6">
+          <IndexationPanel
+            property={client.gsc_property}
+            domain={client.domain}
+          />
         </div>
       ) : null}
 
