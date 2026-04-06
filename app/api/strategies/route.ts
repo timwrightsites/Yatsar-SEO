@@ -6,17 +6,6 @@ function isAgentCall(request: Request) {
   return key && key === process.env.OPENCLAW_GATEWAY_TOKEN
 }
 
-function agentDebug(request: Request) {
-  const key = request.headers.get('x-agent-key') || ''
-  const env = process.env.OPENCLAW_GATEWAY_TOKEN || ''
-  return {
-    received_key_len: key.length,
-    received_key_preview: key.slice(0, 6) + '...' + key.slice(-4),
-    env_token_len: env.length,
-    env_token_preview: env ? env.slice(0, 6) + '...' + env.slice(-4) : '(not set)',
-    match: key === env,
-  }
-}
 
 async function getUser(request: Request) {
   if (isAgentCall(request)) return { authorized: true }
@@ -49,8 +38,7 @@ export async function GET(request: Request) {
 // POST /api/strategies — create a strategy
 export async function POST(request: Request) {
   const { authorized } = await getUser(request)
-  const dbg = agentDebug(request)
-  return NextResponse.json({ error: 'Unauthorized-v3', debug: dbg }, { status: 401 })
+  if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
   const { client_id, name, description } = body
