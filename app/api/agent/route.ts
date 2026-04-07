@@ -346,17 +346,51 @@ async function extractAndSaveStrategy(
         notes: t.notes || null,
       }))
 
-      const { error: tasksErr } = await supabase
+      const { data: insertedTasks, error: tasksErr } = await supabase
         .from('strategy_tasks')
         .insert(taskRows)
+        .select('id, type')
 
       if (tasksErr) {
         console.error('[agent] Failed to insert strategy tasks:', tasksErr)
       } else {
-        console.log(`[agent] Inserted ${taskRows.length} tasks for strategy "${parsed.name}"`)
+        console.log(`[agent] Inserted ${(insertedTasks ?? []).length} tasks for strategy "${parsed.name}"`)
+
+        // ── Auto-dispatch each new task to the bot system ──
+        // Fire-and-forget — we don't await these so the chat response stays
+        // snappy. The dispatch route writes its own bot_runs ledger entries
+        // and updates strategy_task status as bots progress.
+        if (insertedTasks?.length) {
+          dispatchTasksInBackground(insertedTasks.map((t: { id: string }) => t.id))
+        }
       }
     }
   } catch (err) {
     console.error('[agent] Unexpected error saving strategy:', err)
+  }
+}
+
+// ── Helper: fire-and-forget bot dispatch for newly created tasks ──
+// Calls our own /api/bots/dispatch route in the background. We don't
+// await — the chat response should not be blocked by bot work, and the
+// dispatcher writes its own bot_runs ledger entries.
+function dispatchTasksInBackground(taskIds: string[]) {
+  const baseUrl =
+    process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const secret = process.env.BOTS_DISPATCH_SECRET
+
+  for (const taskId of taskIds) {
+    fetch(`${baseUrl}/api/bots/dispatch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+      },
+      body: JSON.stringify({ taskId, triggerSource: 'task_created' }),
+    }).catch(err => {
+      console.warn(`[agent] Background dispatch failed for task ${taskId}:`, err)
+    })
   }
 }
