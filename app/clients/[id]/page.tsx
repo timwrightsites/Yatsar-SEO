@@ -183,10 +183,10 @@ export default async function ClientPage({ params, searchParams }: Props) {
         </div>
       ) : null}
 
-      {/* Ahrefs panel — mock data, ready to wire to /api/ahrefs/* once key is set */}
+      {/* Ahrefs panel — live via /api/ahrefs/*, falls back to mock when AHREFS_API_KEY missing */}
       {client.domain ? (
         <div className="mb-6">
-          <AhrefsPanel domain={client.domain} />
+          <AhrefsPanel clientId={client.id} domain={client.domain} />
         </div>
       ) : null}
 
