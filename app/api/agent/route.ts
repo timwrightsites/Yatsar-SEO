@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { buildAhrefsContext } from '@/lib/ahrefs-context'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300 // 5 minutes — allows long agent responses
@@ -99,9 +100,43 @@ export async function POST(req: NextRequest) {
     console.warn('[agent] Failed to log task start:', err)
   }
 
-  // ── 5. Inject strategy format instruction into messages ────
+  // ── 5a. Pull the client's domain so we can build Ahrefs context ──
+  let clientDomain: string | null = null
+  try {
+    const { data: client } = await (supabase as any)
+      .from('clients')
+      .select('domain')
+      .eq('id', clientId)
+      .single()
+    clientDomain = client?.domain ?? null
+  } catch (err) {
+    console.warn('[agent] Failed to load client domain for Ahrefs context:', err)
+  }
+
+  // ── 5b. Build Ahrefs context (cached, ~0 cost on warm cache) ──
+  // This gives the strategist real visibility into the client's SEO state
+  // (DR, top keywords, top pages, competitors) instead of guessing.
+  // Returns '' if AHREFS_API_KEY is missing or any fetch fails — chat still works.
+  let ahrefsContext = ''
+  if (clientDomain) {
+    ahrefsContext = await buildAhrefsContext({
+      supabase,
+      clientId,
+      domain: clientDomain,
+    })
+  }
+
+  // ── 5c. Assemble the system messages ──
+  // Order matters: data context first (so the model has facts in working
+  // memory), then formatting rules (so it knows how to emit tasks).
+  const systemMessages: { role: string; content: string }[] = []
+  if (ahrefsContext) {
+    systemMessages.push({ role: 'system', content: ahrefsContext })
+  }
+  systemMessages.push({ role: 'system', content: STRATEGY_SYSTEM_INSTRUCTION })
+
   const augmentedMessages = [
-    { role: 'system', content: STRATEGY_SYSTEM_INSTRUCTION },
+    ...systemMessages,
     ...messages,
   ]
 

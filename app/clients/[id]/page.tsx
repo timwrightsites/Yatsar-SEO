@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Play, RefreshCw, Globe, Settings2 } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Globe, Settings2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase-server'
 import { TrafficChart } from '@/components/charts/TrafficChart'
 import { BotActivity } from '@/components/dashboard/BotActivity'
@@ -203,15 +203,19 @@ export default async function ClientPage({ params, searchParams }: Props) {
         </details>
       </div>
 
-      {/* Bots */}
+      {/* Bots — autonomous, driven by tasks + standing orders. No manual triggers. */}
       <div className="mb-6">
-        <h2 className="text-white font-bold text-xl mb-4">Bots</h2>
+        <div className="flex items-baseline justify-between mb-4">
+          <h2 className="text-white font-bold text-xl">Bots</h2>
+          <p className="text-white/30 text-[11px]">Autonomous · standing orders</p>
+        </div>
         <div className="grid grid-cols-4 gap-4">
           {(['content', 'link', 'technical', 'geo'] as const).map((type) => {
             const bot    = (bots ?? []).find((b) => b.bot_type === type)
             const meta   = botMeta[type]
             const status = bot?.status ?? 'idle'
             const badge  = statusBadge[status]
+            const isRunning = status === 'running'
 
             return (
               <div key={type} className="bg-[#141414] border border-white/8 rounded-lg p-4">
@@ -225,16 +229,21 @@ export default async function ClientPage({ params, searchParams }: Props) {
                   </span>
                 </div>
                 <p className="text-white/30 text-xs leading-relaxed mb-4">{meta.desc}</p>
-                {bot?.last_run_at && (
-                  <p className="text-white/20 text-[11px] mb-3">
-                    Last run: {new Date(bot.last_run_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </p>
+
+                {isRunning && (
+                  <div className="flex items-center gap-1.5 mb-2 text-[11px] text-white/60">
+                    <RefreshCw size={11} className="animate-spin" />
+                    <span>Working…</span>
+                  </div>
                 )}
-                <button className="w-full flex items-center justify-center gap-1.5 py-2 text-xs text-white/60 border border-white/10 rounded-md hover:bg-white/5 hover:text-white transition-all">
-                  {status === 'running'
-                    ? <><RefreshCw size={11} className="animate-spin" /> Running...</>
-                    : <><Play size={11} /> Run Now</>}
-                </button>
+
+                {bot?.last_run_at ? (
+                  <p className="text-white/25 text-[11px]">
+                    Last activity: {new Date(bot.last_run_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                ) : (
+                  <p className="text-white/20 text-[11px]">No activity yet</p>
+                )}
               </div>
             )
           })}
