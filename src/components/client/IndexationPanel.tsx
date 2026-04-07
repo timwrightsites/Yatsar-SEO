@@ -15,8 +15,32 @@ interface PageEntry {
   inspectStatus:  InspectStatus
   lastCrawlTime:  string | null
   indexingState:  string | null
+  coverageState:  string | null
+  verdict:        string | null
+  robotsTxtState: string | null
+  crawledAs:      string | null
   submitStatus:   'idle' | 'submitting' | 'submitted' | 'error'
   submitMessage?: string
+}
+
+// Human-readable explanation for Google's coverageState strings
+function explainCoverage(coverage: string | null): string | null {
+  if (!coverage) return null
+  const c = coverage.toLowerCase()
+  if (c.includes('submitted and indexed'))   return 'Live in Google'
+  if (c.includes('indexed, not submitted'))  return 'Indexed (not in sitemap)'
+  if (c.includes('discovered'))              return 'Found but not crawled yet'
+  if (c.includes('crawled'))                 return 'Crawled but not indexed'
+  if (c.includes('duplicate'))               return 'Duplicate — Google chose another URL'
+  if (c.includes('noindex'))                 return 'Blocked by noindex tag'
+  if (c.includes('redirect'))                return 'Page redirects elsewhere'
+  if (c.includes('not found') || c.includes('404')) return 'Returns 404'
+  if (c.includes('soft 404'))                return 'Soft 404'
+  if (c.includes('blocked by robots'))       return 'Blocked by robots.txt'
+  if (c.includes('unauthorized'))            return 'Unauthorized (401)'
+  if (c.includes('server error'))            return 'Server error (5xx)'
+  if (c.includes('url is unknown'))          return 'Google has never seen this URL'
+  return coverage
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -82,12 +106,16 @@ export function IndexationPanel({ property, domain }: Props) {
 
       const entries: PageEntry[] = sitemapUrls.map(url => ({
         url,
-        path:          pathOf(url),
-        inGSC:         gscPaths.has(pathOf(url)),
-        inspectStatus: 'unknown' as InspectStatus,
-        lastCrawlTime: null,
-        indexingState: null,
-        submitStatus:  'idle',
+        path:           pathOf(url),
+        inGSC:          gscPaths.has(pathOf(url)),
+        inspectStatus:  'unknown' as InspectStatus,
+        lastCrawlTime:  null,
+        indexingState:  null,
+        coverageState:  null,
+        verdict:        null,
+        robotsTxtState: null,
+        crawledAs:      null,
+        submitStatus:   'idle',
       }))
 
       // Sort: undetected first, then alphabetical
@@ -125,13 +153,19 @@ export function IndexationPanel({ property, domain }: Props) {
         return
       }
 
-      const isIndexed = data.verdict === 'PASS' || data.indexingState === 'INDEXING_ALLOWED'
+      // "Indexed" only when Google says coverage is "Submitted and indexed" or "Indexed, not submitted"
+      const coverage = (data.coverageState ?? '').toLowerCase()
+      const isIndexed = data.verdict === 'PASS' && coverage.includes('indexed') && !coverage.includes('not indexed')
       setPages(prev => prev.map(p =>
         p.url === url ? {
           ...p,
-          inspectStatus: isIndexed ? 'indexed' : 'not_indexed',
-          lastCrawlTime: data.lastCrawlTime,
-          indexingState: data.indexingState,
+          inspectStatus:  isIndexed ? 'indexed' : 'not_indexed',
+          lastCrawlTime:  data.lastCrawlTime,
+          indexingState:  data.indexingState,
+          coverageState:  data.coverageState ?? null,
+          verdict:        data.verdict ?? null,
+          robotsTxtState: data.robotsTxtState ?? null,
+          crawledAs:      data.crawledAs ?? null,
         } : p
       ))
     } catch {
@@ -361,15 +395,25 @@ export function IndexationPanel({ property, domain }: Props) {
               style={{ gridTemplateColumns: '1fr 100px 80px 90px' }}>
 
               {/* URL */}
-              <div className="min-w-0 flex items-center gap-1.5">
-                <a href={page.url} target="_blank" rel="noopener noreferrer"
-                  className="text-white/60 text-xs truncate hover:text-white/90 transition-colors"
-                  title={page.url}>
-                  {page.path}
-                </a>
-                <a href={page.url} target="_blank" rel="noopener noreferrer" className="text-white/20 hover:text-white/50 shrink-0">
-                  <ExternalLink size={10} />
-                </a>
+              <div className="min-w-0 flex flex-col gap-0.5">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <a href={page.url} target="_blank" rel="noopener noreferrer"
+                    className="text-white/60 text-xs truncate hover:text-white/90 transition-colors"
+                    title={page.url}>
+                    {page.path}
+                  </a>
+                  <a href={page.url} target="_blank" rel="noopener noreferrer" className="text-white/20 hover:text-white/50 shrink-0">
+                    <ExternalLink size={10} />
+                  </a>
+                </div>
+                {page.coverageState && (
+                  <p className="text-[10px] text-white/35 truncate" title={`${page.coverageState}${page.lastCrawlTime ? ` · last crawled ${new Date(page.lastCrawlTime).toLocaleDateString()}` : ''}`}>
+                    {explainCoverage(page.coverageState)}
+                    {page.lastCrawlTime && (
+                      <span className="text-white/20"> · crawled {new Date(page.lastCrawlTime).toLocaleDateString()}</span>
+                    )}
+                  </p>
+                )}
               </div>
 
               {/* GSC status */}
@@ -433,8 +477,8 @@ export function IndexationPanel({ property, domain }: Props) {
 
       {/* Footer note */}
       <p className="text-white/15 text-[10px] mt-4 pt-3 border-t border-white/5">
-        "Not in GSC" means the page hasn't appeared in search analytics — it may still be indexed. Use "Check" to inspect via Google's URL Inspection API.
-        Google processes indexing requests within 24–72 hours. Daily limit: 200 submissions.
+        "Not in GSC" only means the page hasn't earned impressions yet — it may still be indexed. Click "Check" to ask Google's URL Inspection API directly; the reason (e.g. "Discovered, not crawled" or "Crawled, not indexed") will appear under the URL.
+        Indexing requests typically process within 24–72 hours. Daily limit: 200 submissions.
       </p>
 
     </div>

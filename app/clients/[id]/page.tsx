@@ -10,6 +10,7 @@ import { GSCMetricCards } from '@/components/client/GSCMetricCards'
 import { PageSpeedPanel } from '@/components/client/PageSpeedPanel'
 import { IndexationPanel } from '@/components/client/IndexationPanel'
 import { StrategyPanel } from '@/components/client/StrategyPanel'
+import { AhrefsPanel } from '@/components/client/AhrefsPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
 import { ArchiveButton } from '@/components/client/ArchiveButton'
 import { ContentSection } from '@/components/client/ContentSection'
@@ -179,6 +180,13 @@ export default async function ClientPage({ params, searchParams }: Props) {
       {client.pagespeed_url ? (
         <div className="mb-6">
           <PageSpeedPanel url={client.pagespeed_url} />
+        </div>
+      ) : null}
+
+      {/* Ahrefs panel — mock data, ready to wire to /api/ahrefs/* once key is set */}
+      {client.domain ? (
+        <div className="mb-6">
+          <AhrefsPanel domain={client.domain} />
         </div>
       ) : null}
 
