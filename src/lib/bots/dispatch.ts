@@ -21,6 +21,7 @@
  */
 
 import { runTechnicalBot } from './technical'
+import { runContentBot }   from './content'
 import type {
   BotExecutionResult,
   BotRunRecord,
@@ -204,6 +205,12 @@ async function executeBot(args: ExecuteBotArgs): Promise<BotExecutionResult> {
         standingOrder: args.standingOrder,
       })
     case 'content':
+      return runContentBot({
+        supabase:      args.supabase,
+        client:        args.client,
+        task:          args.task,
+        standingOrder: args.standingOrder,
+      })
     case 'link':
     case 'geo':
       return {
