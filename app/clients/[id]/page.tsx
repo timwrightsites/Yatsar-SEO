@@ -14,6 +14,8 @@ import { AhrefsPanel } from '@/components/client/AhrefsPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
 import { ArchiveButton } from '@/components/client/ArchiveButton'
 import { ContentSection } from '@/components/client/ContentSection'
+import { LinkProspectsSection } from '@/components/client/LinkProspectsSection'
+import type { ProspectWithDraft } from '@/components/client/OutreachEditor'
 import { ClientTabs, isTabKey, type TabKey } from '@/components/client/ClientTabs'
 import AgentPanel from '@/components/client/AgentPanel'
 import { cn } from '@/lib/utils'
@@ -55,12 +57,17 @@ export default async function ClientPage({ params, searchParams }: Props) {
     { data: logs },
     { data: metrics },
     { data: drafts },
+    { data: prospectsRaw },
   ] = await Promise.all([
     db.from('clients').select('*').eq('id', id).single() as Promise<{ data: Client & { gsc_property: string | null; pagespeed_url: string | null } | null }>,
     db.from('bot_configs').select('*').eq('client_id', id) as Promise<{ data: BotConfig[] | null }>,
     db.from('activity_logs').select('*').eq('client_id', id).order('created_at', { ascending: false }).limit(20) as Promise<{ data: ActivityLog[] | null }>,
     db.from('metrics').select('*').eq('client_id', id).order('month') as Promise<{ data: Metric[] | null }>,
     db.from('content_drafts').select('*').eq('client_id', id).order('created_at', { ascending: false }) as Promise<{ data: unknown[] | null }>,
+    db.from('link_prospects')
+      .select('*, outreach_drafts(id, subject, body, tone, status, agent_notes, reviewer_notes, created_at)')
+      .eq('client_id', id)
+      .order('prospect_score', { ascending: false }) as Promise<{ data: unknown[] | null }>,
   ])
 
   if (!client) notFound()
@@ -71,6 +78,35 @@ export default async function ClientPage({ params, searchParams }: Props) {
 
   const safeDrafts = (drafts ?? []) as Array<{ status: string }>
   const pendingDrafts = safeDrafts.filter(d => d.status === 'pending_review').length
+
+  // Flatten the joined outreach_drafts (Supabase returns it as an array per row;
+  // we collapse to the single most recent draft for the editor's convenience).
+  const prospects: ProspectWithDraft[] = ((prospectsRaw ?? []) as Array<Record<string, unknown>>).map(p => {
+    const draftsArr = (p.outreach_drafts ?? []) as Array<{
+      id: string; subject: string; body: string; tone: string | null;
+      status: string; agent_notes: string | null; reviewer_notes: string | null;
+      created_at: string;
+    }>
+    const latestDraft = draftsArr.length > 0
+      ? [...draftsArr].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0]
+      : null
+    return {
+      id:                    p.id as string,
+      client_id:             p.client_id as string,
+      domain:                p.domain as string,
+      domain_rating:         (p.domain_rating ?? null) as number | null,
+      domain_traffic:        (p.domain_traffic ?? null) as number | null,
+      competitors_linking:   (p.competitors_linking ?? []) as string[],
+      competitor_link_count: (p.competitor_link_count ?? 0) as number,
+      prospect_score:        Number(p.prospect_score ?? 0),
+      why:                   (p.why ?? null) as string | null,
+      contact_url:           (p.contact_url ?? null) as string | null,
+      status:                (p.status ?? 'new') as string,
+      created_at:            p.created_at as string,
+      draft:                 latestDraft,
+    }
+  })
+  const newProspects = prospects.filter(p => p.status === 'new').length
 
   const trafficChange = prev && latest && prev.organic_traffic && latest.organic_traffic
     ? Math.round(((latest.organic_traffic - prev.organic_traffic) / prev.organic_traffic) * 100)
@@ -118,7 +154,12 @@ export default async function ClientPage({ params, searchParams }: Props) {
       </div>
 
       {/* Tab navigation */}
-      <ClientTabs clientId={client.id} active={activeTab} pendingDrafts={pendingDrafts} />
+      <ClientTabs
+        clientId={client.id}
+        active={activeTab}
+        pendingDrafts={pendingDrafts}
+        newProspects={newProspects}
+      />
 
       {/* ─── OVERVIEW TAB ─────────────────────────────────────────── */}
       {activeTab === 'overview' && (
@@ -271,6 +312,13 @@ export default async function ClientPage({ params, searchParams }: Props) {
             initialDrafts={(drafts ?? []) as any[]}
             highlightId={highlightContentId}
           />
+        </div>
+      )}
+
+      {/* ─── LINK PROSPECTS TAB ───────────────────────────────────── */}
+      {activeTab === 'links' && (
+        <div className="mb-6">
+          <LinkProspectsSection initialProspects={prospects} />
         </div>
       )}
 
