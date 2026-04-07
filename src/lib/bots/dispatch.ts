@@ -14,14 +14,19 @@
  *
  * Currently implemented bots:
  *   - technical (PageSpeed Insights)
+ *   - content   (OpenClaw article drafts)
+ *   - link      (Ahrefs link gap + OpenClaw outreach drafts)
  *
- * The other three (content, link, geo) immediately mark their bot_runs row
- * as 'skipped' with a "not yet implemented" note. This keeps the dispatch
- * pipeline complete while we ship one bot at a time.
+ * Still pending:
+ *   - geo (Google Business Profile, citations)
+ *
+ * Pending bots immediately mark their bot_runs row as 'skipped' with a
+ * "not yet implemented" note.
  */
 
 import { runTechnicalBot } from './technical'
 import { runContentBot }   from './content'
+import { runLinkBot }      from './link'
 import type {
   BotExecutionResult,
   BotRunRecord,
@@ -212,6 +217,12 @@ async function executeBot(args: ExecuteBotArgs): Promise<BotExecutionResult> {
         standingOrder: args.standingOrder,
       })
     case 'link':
+      return runLinkBot({
+        supabase:      args.supabase,
+        client:        args.client,
+        task:          args.task,
+        standingOrder: args.standingOrder,
+      })
     case 'geo':
       return {
         status:  'skipped',

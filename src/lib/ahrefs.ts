@@ -356,3 +356,47 @@ export async function fetchCompetitors({
     },
   })
 }
+
+// ── Referring domains (used by Link Bot for link-gap analysis) ──────────────
+//
+// Pulls the unique referring domains pointing at a given target. The Link
+// Bot calls this for both the client and each competitor, then computes the
+// gap (domains linking to N competitors but not to the client).
+//
+// Cost: ~50 units per call. With 1 client + 5 competitors = 6 calls per
+// link task on a cold cache, then 0 for the rest of the week thanks to the
+// existing weekly cache bucket.
+
+export interface ReferringDomainsParams {
+  supabase:    SupabaseClient
+  clientId:    string
+  target:      string
+  limit?:      number
+  forceFresh?: boolean
+}
+
+const REFDOMAINS_SELECT = [
+  'domain',
+  'domain_rating',
+  'traffic_domain',
+  'dofollow_links_to_target',
+  'links_to_target',
+  'first_seen',
+  'last_seen',
+].join(',')
+
+export async function fetchReferringDomains({
+  supabase, clientId, target, limit = STANDARD_ROW_CAP, forceFresh,
+}: ReferringDomainsParams) {
+  return ahrefsGet({
+    supabase, clientId, forceFresh,
+    endpoint: 'site-explorer/refdomains',
+    params: {
+      target:    normalizeTarget(target),
+      date:      weekBucketISO(),
+      select:    REFDOMAINS_SELECT,
+      order_by:  'domain_rating:desc',
+      limit:     Math.min(limit, STANDARD_ROW_CAP),
+    },
+  })
+}
