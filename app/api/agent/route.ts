@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { buildAhrefsContext } from '@/lib/ahrefs-context'
+import { dispatchBotForTask } from '@/lib/bots/dispatch'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300 // 5 minutes — allows long agent responses
@@ -234,7 +235,35 @@ export async function POST(req: NextRequest) {
         }
 
         // ── 8. Extract and save strategy if present ──────────
-        await extractAndSaveStrategy(supabase, clientId, agentId, fullResponse)
+        // Returns task IDs that were inserted, so we can dispatch bots
+        // for them BEFORE the stream closes (otherwise the lambda gets
+        // frozen and any in-flight outbound work dies).
+        const newTaskIds = await extractAndSaveStrategy(supabase, clientId, agentId, fullResponse)
+
+        // ── 9. Dispatch bots for new tasks (in-process, awaited) ──
+        // We call dispatchBotForTask directly instead of going over HTTP
+        // to /api/bots/dispatch. This avoids fire-and-forget unreliability
+        // on Vercel serverless and removes the BOTS_DISPATCH_SECRET round
+        // trip entirely. Each dispatch writes its own bot_runs ledger entry.
+        if (newTaskIds.length) {
+          console.log(`[agent] Dispatching ${newTaskIds.length} bot(s) in-process for new tasks`)
+          const dispatchResults = await Promise.allSettled(
+            newTaskIds.map(taskId =>
+              dispatchBotForTask({
+                supabase,
+                taskId,
+                triggerSource: 'task_created',
+              })
+            )
+          )
+          for (const [i, r] of dispatchResults.entries()) {
+            if (r.status === 'rejected') {
+              console.error(`[agent] Bot dispatch failed for task ${newTaskIds[i]}:`, r.reason)
+            } else {
+              console.log(`[agent] Bot dispatch result for task ${newTaskIds[i]}:`, r.value)
+            }
+          }
+        }
 
       } catch (err) {
         console.error('[agent] Stream error:', err)
@@ -273,16 +302,18 @@ async function updateTaskStatus(
 }
 
 // ── Helper: extract :::strategy block and write to Supabase ──
+// Returns the IDs of newly inserted strategy_tasks so the caller can
+// dispatch bots for them in-process before the stream closes.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function extractAndSaveStrategy(
   supabase: any,
   clientId: string,
   agentId: string,
   responseText: string,
-) {
+): Promise<string[]> {
   // Look for :::strategy ... ::: block
   const match = responseText.match(/:::strategy\s*\n([\s\S]*?)\n:::/)
-  if (!match) return // No strategy block — nothing to do
+  if (!match) return [] // No strategy block — nothing to do
 
   let parsed: {
     name: string
@@ -302,12 +333,12 @@ async function extractAndSaveStrategy(
     parsed = JSON.parse(match[1])
   } catch (err) {
     console.warn('[agent] Found :::strategy block but JSON was invalid:', err)
-    return
+    return []
   }
 
   if (!parsed.name) {
     console.warn('[agent] Strategy block missing "name" field — skipping')
-    return
+    return []
   }
 
   const validTypes = ['content', 'technical', 'link', 'keyword', 'meta', 'other']
@@ -327,7 +358,7 @@ async function extractAndSaveStrategy(
 
     if (stratErr || !strategy) {
       console.error('[agent] Failed to create strategy:', stratErr)
-      return
+      return []
     }
 
     console.log(`[agent] Created strategy "${parsed.name}" (${strategy.id}) for client ${clientId}`)
@@ -353,44 +384,16 @@ async function extractAndSaveStrategy(
 
       if (tasksErr) {
         console.error('[agent] Failed to insert strategy tasks:', tasksErr)
-      } else {
-        console.log(`[agent] Inserted ${(insertedTasks ?? []).length} tasks for strategy "${parsed.name}"`)
-
-        // ── Auto-dispatch each new task to the bot system ──
-        // Fire-and-forget — we don't await these so the chat response stays
-        // snappy. The dispatch route writes its own bot_runs ledger entries
-        // and updates strategy_task status as bots progress.
-        if (insertedTasks?.length) {
-          dispatchTasksInBackground(insertedTasks.map((t: { id: string }) => t.id))
-        }
+        return []
       }
+
+      console.log(`[agent] Inserted ${(insertedTasks ?? []).length} tasks for strategy "${parsed.name}"`)
+      return (insertedTasks ?? []).map((t: { id: string }) => t.id)
     }
+
+    return []
   } catch (err) {
     console.error('[agent] Unexpected error saving strategy:', err)
-  }
-}
-
-// ── Helper: fire-and-forget bot dispatch for newly created tasks ──
-// Calls our own /api/bots/dispatch route in the background. We don't
-// await — the chat response should not be blocked by bot work, and the
-// dispatcher writes its own bot_runs ledger entries.
-function dispatchTasksInBackground(taskIds: string[]) {
-  const baseUrl =
-    process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-  const secret = process.env.BOTS_DISPATCH_SECRET
-
-  for (const taskId of taskIds) {
-    fetch(`${baseUrl}/api/bots/dispatch`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
-      },
-      body: JSON.stringify({ taskId, triggerSource: 'task_created' }),
-    }).catch(err => {
-      console.warn(`[agent] Background dispatch failed for task ${taskId}:`, err)
-    })
+    return []
   }
 }
