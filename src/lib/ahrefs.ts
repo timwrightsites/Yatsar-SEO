@@ -3,7 +3,9 @@
  *
  * Reads AHREFS_API_KEY from env. All requests authenticate via
  * `Authorization: Bearer <key>`. Responses are cached in the
- * `ahrefs_snapshots` Supabase table for 24 hours per (client_id, endpoint, params).
+ * `ahrefs_snapshots` Supabase table for 7 days per (client_id, endpoint, params).
+ * The `date` param is bucketed to the most recent Monday so the cache key
+ * stays stable for an entire week — instead of rotating at midnight UTC.
  *
  * Endpoint references (Ahrefs API v3, docs.ahrefs.com):
  *   GET /v3/site-explorer/domain-rating
@@ -23,7 +25,10 @@ import { createHash } from 'crypto'
 type SupabaseClient = any
 
 const AHREFS_BASE_URL  = 'https://api.ahrefs.com/v3'
-const CACHE_TTL_HOURS  = 24
+// 7-day cache. Combined with the weekly date bucket below this means each
+// (client, endpoint, params) combination costs at most ~1 Ahrefs request
+// per week. The refresh button on the panel sends `?fresh=1` to force-bypass.
+const CACHE_TTL_HOURS  = 24 * 7
 const STANDARD_ROW_CAP = 25
 
 export class AhrefsKeyMissingError extends Error {
@@ -46,8 +51,17 @@ function getKey(): string {
   return key
 }
 
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10)
+// Returns the ISO date of the most recent Monday (UTC). We use this as the
+// `date` param for Ahrefs requests so the cache key stays stable for an
+// entire week — instead of rotating at midnight UTC every day. Ahrefs only
+// updates these metrics every few days anyway, so daily re-fetches were
+// just burning credits.
+function weekBucketISO(): string {
+  const d   = new Date()
+  const day = d.getUTCDay()                  // 0 (Sun) – 6 (Sat)
+  const diff = day === 0 ? 6 : day - 1       // days since Monday
+  d.setUTCDate(d.getUTCDate() - diff)
+  return d.toISOString().slice(0, 10)
 }
 
 function hashParams(params: Record<string, string | number | undefined>): string {
@@ -188,7 +202,7 @@ export interface OverviewParams {
  */
 export async function fetchOverview({ supabase, clientId, target, forceFresh }: OverviewParams) {
   const t    = normalizeTarget(target)
-  const date = todayISO()
+  const date = weekBucketISO()
 
   const [dr, metrics, backlinks] = await Promise.all([
     ahrefsGet({
@@ -251,7 +265,7 @@ export async function fetchOrganicKeywords({
     endpoint: 'site-explorer/organic-keywords',
     params: {
       target:        normalizeTarget(target),
-      date:          todayISO(),
+      date:          weekBucketISO(),
       date_compared: lastMonthISO(),
       country:       country ?? 'us',
       select:        ORGANIC_KEYWORDS_SELECT,
@@ -294,7 +308,7 @@ export async function fetchTopPages({
     endpoint: 'site-explorer/top-pages',
     params: {
       target:        normalizeTarget(target),
-      date:          todayISO(),
+      date:          weekBucketISO(),
       date_compared: lastMonthISO(),
       country:       country ?? 'us',
       select:        TOP_PAGES_SELECT,
@@ -333,7 +347,7 @@ export async function fetchCompetitors({
     endpoint: 'site-explorer/organic-competitors',
     params: {
       target:        normalizeTarget(target),
-      date:          todayISO(),
+      date:          weekBucketISO(),
       date_compared: lastMonthISO(),
       country:       'us',
       select:        COMPETITORS_SELECT,

@@ -257,6 +257,15 @@ function asArray(obj: any, ...keys: string[]): any[] {
     if (Array.isArray(v)) return v
   }
   if (Array.isArray(obj)) return obj
+  // Last-resort: walk the top-level keys and return the first array we find.
+  // Ahrefs occasionally renames the wrapping key (e.g. `competitors` →
+  // `organic_competitors` between report versions). This guarantees we still
+  // surface the rows so the panel doesn't fall back to mock for a rename.
+  if (obj && typeof obj === 'object') {
+    for (const k of Object.keys(obj)) {
+      if (Array.isArray(obj[k])) return obj[k]
+    }
+  }
   return []
 }
 

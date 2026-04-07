@@ -16,6 +16,17 @@ export async function GET(req: Request) {
   try {
     const supabase = await createClient()
     const data = await fetchCompetitors({ supabase, clientId, target, limit, forceFresh: fresh })
+    // Debug: log the top-level shape so we can see what wrapping key Ahrefs used.
+    // Safe to remove once normalizer is confirmed picking up rows.
+    if (data && typeof data === 'object') {
+      const keys = Object.keys(data)
+      const summary = keys.map(k => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const v = (data as any)[k]
+        return `${k}:${Array.isArray(v) ? `array(${v.length})` : typeof v}`
+      })
+      console.log('[ahrefs/competitors] response shape:', summary.join(', '))
+    }
     return NextResponse.json(data)
   } catch (err) {
     if (err instanceof AhrefsKeyMissingError) {
