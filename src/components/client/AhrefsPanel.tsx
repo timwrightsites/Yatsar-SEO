@@ -334,17 +334,16 @@ function normalizeKeywords(raw: any): OrganicKeyword[] {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeTopPages(raw: any): TopPage[] {
-  // NOTE: top-pages URL wasn't captured from the Ahrefs UI; field names
-  // below are best-effort based on the convention seen in the other reports
-  // (sum_traffic_merged, value_merged, sum_keywords_merged, etc.).
+  // Real top-pages columns (confirmed from Ahrefs 400 response):
+  // url, sum_traffic_merged, value, keywords, top_keyword, top_keyword_best_position
   const rows = asArray(raw, 'pages', 'top_pages', 'data', 'rows')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return rows.map((r: any): TopPage => ({
-    url:      String(pick(r, 'url') ?? '/'),
+    url:      String(pick(r, 'url', 'raw_url') ?? '/'),
     traffic:  Number(pick(r, 'sum_traffic_merged', 'sum_traffic', 'traffic') ?? 0),
-    value:    Number(pick(r, 'value_merged', 'value', 'traffic_value') ?? 0),
-    keywords: Number(pick(r, 'sum_keywords_merged', 'sum_keywords', 'keywords_count', 'keywords') ?? 0),
-    topKw:    String(pick(r, 'top_keyword_merged', 'top_keyword', 'keyword') ?? ''),
+    value:    Number(pick(r, 'value', 'value_merged', 'traffic_value') ?? 0),
+    keywords: Number(pick(r, 'keywords', 'sum_keywords_merged', 'sum_keywords') ?? 0),
+    topKw:    String(pick(r, 'top_keyword', 'top_keyword_merged', 'keyword') ?? ''),
     topKwPos: Number(pick(r, 'top_keyword_best_position', 'top_keyword_position', 'top_position', 'position') ?? 0),
   }))
 }

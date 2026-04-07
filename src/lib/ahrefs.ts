@@ -272,16 +272,17 @@ export interface TopPagesParams {
   forceFresh?: boolean
 }
 
-// NOTE: The Ahrefs UI URL for this report wasn't captured. The endpoint
-// path and select fields below are best-effort based on the convention
-// observed in the other reports. If this 4xxs, grab the URL from the
-// "Organic pages by traffic" report's API button and we'll patch.
+// Real column names confirmed via 400-error response from Ahrefs:
+// available columns include url, sum_traffic_merged, value, keywords,
+// top_keyword_best_position_prev, top_keyword_prev, traffic_diff, etc.
+// (NB: top-pages does NOT use the `_merged` suffix on value/keywords —
+// only `sum_traffic_merged`. Different convention from organic-keywords.)
 const TOP_PAGES_SELECT = [
   'url',
   'sum_traffic_merged',
-  'value_merged',
-  'sum_keywords_merged',
-  'top_keyword_merged',
+  'value',
+  'keywords',
+  'top_keyword',
   'top_keyword_best_position',
 ].join(',')
 
