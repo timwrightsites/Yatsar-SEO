@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import Typography from '@tiptap/extension-typography'
+import { marked } from 'marked'
 import { useState, useCallback } from 'react'
 import {
   Bold, Italic, Heading2, Heading3, List, ListOrdered,
@@ -29,6 +30,29 @@ interface Props {
 }
 
 type ActionState = 'idle' | 'saving' | 'approving' | 'rejecting'
+
+// ── Initial content loader ─────────────────────────────────────
+// The Content Bot saves raw Markdown to content_drafts.content. The human
+// reviewer edits in TipTap (which works in HTML), and on save we write the
+// HTML back. So the stored value can be EITHER markdown (first load, bot
+// output) or HTML (after the first save). We detect which one we're looking
+// at and convert markdown → HTML before feeding TipTap. An empty string is
+// treated as empty doc.
+function loadInitialContent(raw: string | null | undefined): string {
+  if (!raw) return ''
+  const trimmed = raw.trimStart()
+  // If it already looks like HTML (leading tag), pass through as-is.
+  if (trimmed.startsWith('<')) return raw
+  // Otherwise parse as markdown. `marked` is synchronous when not using
+  // async extensions, so we cast the return to string.
+  try {
+    return marked.parse(raw, { async: false }) as string
+  } catch {
+    // If parsing dies for any reason, fall back to raw so the user still
+    // sees their content rather than an empty editor.
+    return raw
+  }
+}
 
 function ToolbarButton({
   onClick, active, title, children,
@@ -67,10 +91,10 @@ export function ContentEditor({ draft, onClose, onStatusChange }: Props) {
       Placeholder.configure({ placeholder: 'Content will appear here...' }),
       Typography,
     ],
-    content: draft.content ?? '',
+    content: loadInitialContent(draft.content),
     editorProps: {
       attributes: {
-        class: 'prose prose-invert prose-sm max-w-none focus:outline-none min-h-[400px] text-white/80 leading-relaxed',
+        class: 'tiptap-content max-w-none focus:outline-none min-h-[400px] text-white/80 leading-relaxed',
       },
     },
   })
