@@ -5,6 +5,17 @@ import type { NextRequest } from 'next/server'
 type CookieToSet = { name: string; value: string; options: CookieOptions }
 
 export async function proxy(request: NextRequest) {
+  // Agent bypass: OpenClaw agents hit /api/* routes with x-agent-key instead
+  // of Supabase cookies. Let them through so the route handler itself can
+  // validate the header. Only applies to /api/* — pages still require login.
+  const isApiRoute = request.nextUrl.pathname.startsWith('/api')
+  if (isApiRoute) {
+    const agentKey = request.headers.get('x-agent-key')
+    if (agentKey && agentKey === process.env.OPENCLAW_GATEWAY_TOKEN) {
+      return NextResponse.next({ request })
+    }
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -32,7 +43,6 @@ export async function proxy(request: NextRequest) {
 
   const isLoginPage = request.nextUrl.pathname.startsWith('/login')
   const isAuthRoute = request.nextUrl.pathname.startsWith('/auth')
-  const isApiRoute = request.nextUrl.pathname.startsWith('/api')
 
   // Not logged in → API routes get 401 JSON, pages get redirected to login
   if (!user && !isLoginPage && !isAuthRoute) {
