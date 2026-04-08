@@ -34,7 +34,7 @@ async function getUser(request: Request) {
 // GET /api/strategies?clientId=xxx  — list strategies for a client
 export async function GET(request: Request) {
   const { authorized } = await getUser(request)
-  if (!authorized) return NextResponse.json({ error: 'Unauthorized', debug: buildAuthDebug(request) }, { status: 401 })
+  if (!authorized) return NextResponse.json({ error: 'UnauthorizedDBG', debug: buildAuthDebug(request) }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
   const clientId = searchParams.get('clientId')
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
 // POST /api/strategies — create a strategy
 export async function POST(request: Request) {
   const { authorized } = await getUser(request)
-  if (!authorized) return NextResponse.json({ error: 'Unauthorized', debug: buildAuthDebug(request) }, { status: 401 })
+  if (!authorized) return NextResponse.json({ error: 'UnauthorizedDBG', debug: buildAuthDebug(request) }, { status: 401 })
 
   const body = await request.json()
   const { client_id, name, description } = body
