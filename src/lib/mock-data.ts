@@ -79,14 +79,12 @@ export const mockBotConfigs: BotConfig[] = [
   { id: 'b1', created_at: '2024-01-15T00:00:00Z', client_id: '1', bot_type: 'content', status: 'running', last_run_at: '2026-04-03T10:00:00Z', config: {}, schedule: '0 9 * * 1' },
   { id: 'b2', created_at: '2024-01-15T00:00:00Z', client_id: '1', bot_type: 'link', status: 'idle', last_run_at: '2026-04-02T14:30:00Z', config: {}, schedule: '0 14 * * 3' },
   { id: 'b3', created_at: '2024-01-15T00:00:00Z', client_id: '1', bot_type: 'technical', status: 'idle', last_run_at: '2026-04-01T08:00:00Z', config: {}, schedule: '0 8 * * 5' },
-  { id: 'b4', created_at: '2024-01-15T00:00:00Z', client_id: '1', bot_type: 'geo', status: 'idle', last_run_at: '2026-04-02T16:00:00Z', config: {}, schedule: '0 16 * * 2' },
 ]
 
 export const mockActivityLogs: ActivityLog[] = [
   { id: 'a1', created_at: '2026-04-03T10:32:00Z', client_id: '1', bot_type: 'content', event_type: 'research_complete', message: 'Content Bot completed keyword research for acmecorp.com — found 47 opportunities', status: 'success', metadata: null },
   { id: 'a2', created_at: '2026-04-03T09:15:00Z', client_id: '1', bot_type: 'technical', event_type: 'audit_complete', message: 'Technical Bot completed site audit — 3 issues flagged (2 warnings, 1 critical)', status: 'warning', metadata: null },
   { id: 'a3', created_at: '2026-04-02T14:45:00Z', client_id: '1', bot_type: 'link', event_type: 'outreach_sent', message: 'Link Bot sent 12 outreach emails for guest post opportunities', status: 'success', metadata: null },
-  { id: 'a4', created_at: '2026-04-02T11:00:00Z', client_id: '1', bot_type: 'geo', event_type: 'profile_updated', message: 'GEO Bot updated Google Business Profile — added 4 new Q&A responses', status: 'success', metadata: null },
   { id: 'a5', created_at: '2026-04-01T16:20:00Z', client_id: '1', bot_type: 'content', event_type: 'draft_created', message: 'Content Bot created 2 article drafts — pending your approval', status: 'info', metadata: null },
   { id: 'a6', created_at: '2026-04-01T09:00:00Z', client_id: '1', bot_type: 'technical', event_type: 'speed_check', message: 'PageSpeed audit: Mobile 72, Desktop 91 — mobile needs improvement', status: 'warning', metadata: null },
 ]

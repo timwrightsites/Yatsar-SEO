@@ -47,7 +47,7 @@ import type {
 
 const GATEWAY_URL      = process.env.OPENCLAW_GATEWAY_URL
 const GATEWAY_TOKEN    = process.env.OPENCLAW_GATEWAY_TOKEN
-const LINK_AGENT_ID    = process.env.LINK_BOT_AGENT_ID || 'seo-co-strategist'
+const LINK_AGENT_ID    = process.env.LINK_BOT_AGENT_ID || 'link-agent'
 const MAX_PROSPECTS    = 15
 const MAX_COMPETITORS  = 5
 const MIN_OVERLAP      = 2   // a domain must link to ≥2 competitors to count

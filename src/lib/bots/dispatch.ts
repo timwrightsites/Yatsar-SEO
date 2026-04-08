@@ -15,13 +15,13 @@
  * Currently implemented bots:
  *   - technical (PageSpeed Insights)
  *   - content   (OpenClaw article drafts)
- *   - link      (Ahrefs link gap + OpenClaw outreach drafts)
+ *   - link      (Ahrefs link gap + strategist-driven outreach drafts)
  *
- * Still pending:
- *   - geo (Google Business Profile, citations)
- *
- * Pending bots immediately mark their bot_runs row as 'skipped' with a
- * "not yet implemented" note.
+ * GEO/analytics/audit/optimizer/alerter/reporter work is handled by
+ * dedicated OpenClaw agents running in their own runtimes — those will
+ * be wired in later via a webhook callback pattern, not as bots in this
+ * dispatcher (so OpenClaw's full agent-loop power isn't constrained by
+ * our serverless lambda timeouts).
  */
 
 import { runTechnicalBot } from './technical'
@@ -223,11 +223,6 @@ async function executeBot(args: ExecuteBotArgs): Promise<BotExecutionResult> {
         task:          args.task,
         standingOrder: args.standingOrder,
       })
-    case 'geo':
-      return {
-        status:  'skipped',
-        summary: `${args.botType} bot is not yet implemented — task left in queue.`,
-      }
   }
 }
 

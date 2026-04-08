@@ -9,7 +9,7 @@ export interface MetricCard {
 }
 
 export interface BotStatus {
-  type: 'content' | 'link' | 'technical' | 'geo'
+  type: 'content' | 'link' | 'technical'
   label: string
   status: 'running' | 'idle' | 'paused' | 'error'
   lastRun?: string

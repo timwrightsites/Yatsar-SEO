@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS bot_configs (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   client_id   UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  bot_type    TEXT NOT NULL CHECK (bot_type IN ('content','link','technical','geo')),
+  bot_type    TEXT NOT NULL CHECK (bot_type IN ('content','link','technical')),
   status      TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('running','idle','paused','error')),
   last_run_at TIMESTAMPTZ,
   config      JSONB NOT NULL DEFAULT '{}',

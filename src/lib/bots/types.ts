@@ -10,7 +10,7 @@
  * complete audit trail of what each bot did, when, and why.
  */
 
-export type BotType = 'content' | 'link' | 'technical' | 'geo'
+export type BotType = 'content' | 'link' | 'technical'
 
 export type BotRunStatus =
   | 'queued'

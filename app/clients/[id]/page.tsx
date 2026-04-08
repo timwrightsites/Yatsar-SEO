@@ -30,7 +30,6 @@ const botMeta: Record<string, { label: string; desc: string; dot: string }> = {
   content:   { label: 'Content Bot',   desc: 'Keyword research, article drafts, content gaps',     dot: 'bg-yellow-400' },
   link:      { label: 'Link Bot',      desc: 'Outreach, guest posts, backlink opportunities',       dot: 'bg-blue-400'   },
   technical: { label: 'Technical Bot', desc: 'Site audits, speed, crawl issues',                   dot: 'bg-green-400'  },
-  geo:       { label: 'GEO Bot',       desc: 'Local listings, Google Business Profile, citations', dot: 'bg-green-500'  },
 }
 
 const statusBadge: Record<string, { label: string; className: string }> = {
@@ -218,8 +217,8 @@ export default async function ClientPage({ params, searchParams }: Props) {
               <h2 className="text-white font-bold text-xl">Bots</h2>
               <p className="text-white/30 text-[11px]">Autonomous · standing orders</p>
             </div>
-            <div className="grid grid-cols-4 gap-4">
-              {(['content', 'link', 'technical', 'geo'] as const).map((type) => {
+            <div className="grid grid-cols-3 gap-4">
+              {(['content', 'link', 'technical'] as const).map((type) => {
                 const bot    = (bots ?? []).find((b) => b.bot_type === type)
                 const meta   = botMeta[type]
                 const status = bot?.status ?? 'idle'

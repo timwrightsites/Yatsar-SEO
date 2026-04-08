@@ -13,10 +13,10 @@
  *      - cached Ahrefs context (DR, top keywords, top pages, competitors)
  *        so the bot writes about gaps the client can actually win, not
  *        random topics from training data
- *   2. Call the OpenClaw gateway with the `seo-co-strategist` agent (we
- *      reuse the same agent — it's already provisioned and good at SEO
- *      writing). Once a dedicated `content-bot` agent exists upstream,
- *      flip CONTENT_AGENT_ID below.
+ *   2. Call the OpenClaw gateway with the `writer-agent` operational agent
+ *      (Anthropic Claude Sonnet 4.6 — tuned for long-form SEO writing).
+ *      Override with CONTENT_BOT_AGENT_ID env var if you want a different
+ *      agent for a specific deployment.
  *   3. Parse the response into title / slug / target_keyword / body and
  *      insert into `content_drafts` with status='pending_review'.
  *   4. Update the strategy_task to status='needs_approval', leave a short
@@ -41,7 +41,7 @@ import type {
 
 const GATEWAY_URL   = process.env.OPENCLAW_GATEWAY_URL
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN
-const CONTENT_AGENT_ID = process.env.CONTENT_BOT_AGENT_ID || 'seo-co-strategist'
+const CONTENT_AGENT_ID = process.env.CONTENT_BOT_AGENT_ID || 'writer-agent'
 
 interface ClientRow {
   id:            string

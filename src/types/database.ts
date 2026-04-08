@@ -71,7 +71,7 @@ export interface BotConfig {
   id: string
   created_at: string
   client_id: string
-  bot_type: 'content' | 'link' | 'technical' | 'geo'
+  bot_type: 'content' | 'link' | 'technical'
   status: 'running' | 'idle' | 'paused' | 'error'
   last_run_at: string | null
   config: Json
