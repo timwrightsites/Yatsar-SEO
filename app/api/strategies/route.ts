@@ -3,7 +3,20 @@ import { NextResponse } from 'next/server'
 
 function isAgentCall(request: Request) {
   const key = request.headers.get('x-agent-key')
-  return key && key === process.env.OPENCLAW_GATEWAY_TOKEN
+  const envKey = process.env.OPENCLAW_GATEWAY_TOKEN
+  // TEMP DIAGNOSTIC - remove after fixing auth
+  console.log('[AUTH-DEBUG]', JSON.stringify({
+    headerPresent: !!key,
+    headerLen: key?.length ?? 0,
+    headerFirst3: key?.slice(0, 3) ?? null,
+    headerLast3: key?.slice(-3) ?? null,
+    envPresent: !!envKey,
+    envLen: envKey?.length ?? 0,
+    envFirst3: envKey?.slice(0, 3) ?? null,
+    envLast3: envKey?.slice(-3) ?? null,
+    match: key === envKey,
+  }))
+  return key && key === envKey
 }
 
 
