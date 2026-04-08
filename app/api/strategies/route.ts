@@ -3,9 +3,14 @@ import { NextResponse } from 'next/server'
 
 function isAgentCall(request: Request) {
   const key = request.headers.get('x-agent-key')
+  return key && key === process.env.OPENCLAW_GATEWAY_TOKEN
+}
+
+// TEMP DIAGNOSTIC - remove after fixing auth
+function buildAuthDebug(request: Request) {
+  const key = request.headers.get('x-agent-key')
   const envKey = process.env.OPENCLAW_GATEWAY_TOKEN
-  // TEMP DIAGNOSTIC - remove after fixing auth
-  console.log('[AUTH-DEBUG]', JSON.stringify({
+  return {
     headerPresent: !!key,
     headerLen: key?.length ?? 0,
     headerFirst3: key?.slice(0, 3) ?? null,
@@ -15,8 +20,7 @@ function isAgentCall(request: Request) {
     envFirst3: envKey?.slice(0, 3) ?? null,
     envLast3: envKey?.slice(-3) ?? null,
     match: key === envKey,
-  }))
-  return key && key === envKey
+  }
 }
 
 
@@ -30,7 +34,7 @@ async function getUser(request: Request) {
 // GET /api/strategies?clientId=xxx  — list strategies for a client
 export async function GET(request: Request) {
   const { authorized } = await getUser(request)
-  if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!authorized) return NextResponse.json({ error: 'Unauthorized', debug: buildAuthDebug(request) }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
   const clientId = searchParams.get('clientId')
@@ -51,7 +55,7 @@ export async function GET(request: Request) {
 // POST /api/strategies — create a strategy
 export async function POST(request: Request) {
   const { authorized } = await getUser(request)
-  if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!authorized) return NextResponse.json({ error: 'Unauthorized', debug: buildAuthDebug(request) }, { status: 401 })
 
   const body = await request.json()
   const { client_id, name, description } = body
