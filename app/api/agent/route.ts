@@ -27,7 +27,10 @@ using this exact format so it is saved to the dashboard automatically:
       "priority": "high|medium|low",
       "due_date": "YYYY-MM-DD or null",
       "assigned_agent": "agent name or null",
-      "notes": "optional notes"
+      "notes": "optional notes",
+      "link_targets": [
+        { "domain": "example.com", "angle": "why this site, what to pitch" }
+      ]
     }
   ]
 }
@@ -41,6 +44,19 @@ Rules for the :::strategy block:
 - "due_date" should be YYYY-MM-DD format or null
 - Include as many tasks as needed
 - This block will be parsed automatically — do NOT try to call any API yourself
+
+Link Bot modes:
+- For a "link" type task, you can OPTIONALLY include a "link_targets" array
+  when you want to hand-pick 10-15 prospects yourself (niche blogs, trade
+  associations, podcasts, local directories, complementary services, guest
+  post opportunities). Each target needs a "domain" and an "angle" — a short
+  plain-English note on WHY this site and WHAT to pitch. The Link Bot will
+  use your list instead of running Ahrefs gap analysis, research each one,
+  and draft personalized outreach.
+- If you OMIT "link_targets", the Link Bot falls back to automated Ahrefs
+  link-gap analysis. This mode requires a client with meaningful backlink
+  data (roughly DR 15+, 20+ referring domains). For early-stage clients,
+  prefer the strategist-picked "link_targets" mode.
 `.trim()
 
 export async function POST(req: NextRequest) {
@@ -326,6 +342,12 @@ async function extractAndSaveStrategy(
       due_date?: string | null
       assigned_agent?: string | null
       notes?: string | null
+      // Strategist-provided hints that flow into strategy_tasks.metadata.
+      // Bots read these to enter alternate execution modes.
+      link_targets?: { domain: string; angle?: string }[]
+      // Any other unknown keys also get dumped into metadata so we don't
+      // have to bump the parser every time the prompt grows a new field.
+      [key: string]: unknown
     }[]
   }
 
@@ -365,17 +387,35 @@ async function extractAndSaveStrategy(
 
     // 2. Insert tasks if any
     if (parsed.tasks && parsed.tasks.length > 0) {
-      const taskRows = parsed.tasks.map((t) => ({
-        strategy_id: strategy.id,
-        client_id: clientId,
-        title: t.title,
-        description: t.description || null,
-        type: validTypes.includes(t.type || '') ? t.type : 'other',
-        priority: validPriorities.includes(t.priority || '') ? t.priority : 'medium',
-        due_date: t.due_date || null,
-        assigned_agent: t.assigned_agent || agentId,
-        notes: t.notes || null,
-      }))
+      // Fields that map to their own columns — everything else becomes metadata
+      const KNOWN_TASK_FIELDS = new Set([
+        'title', 'description', 'type', 'priority',
+        'due_date', 'assigned_agent', 'notes',
+      ])
+
+      const taskRows = parsed.tasks.map((t) => {
+        // Collect any fields the strategist included that AREN'T column-mapped.
+        // This is how link_targets (and any future per-task hints) flows through.
+        const metadata: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(t)) {
+          if (!KNOWN_TASK_FIELDS.has(k) && v !== undefined && v !== null) {
+            metadata[k] = v
+          }
+        }
+
+        return {
+          strategy_id: strategy.id,
+          client_id: clientId,
+          title: t.title,
+          description: t.description || null,
+          type: validTypes.includes(t.type || '') ? t.type : 'other',
+          priority: validPriorities.includes(t.priority || '') ? t.priority : 'medium',
+          due_date: t.due_date || null,
+          assigned_agent: t.assigned_agent || agentId,
+          notes: t.notes || null,
+          metadata,
+        }
+      })
 
       const { data: insertedTasks, error: tasksErr } = await supabase
         .from('strategy_tasks')

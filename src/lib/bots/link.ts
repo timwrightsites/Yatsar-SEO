@@ -1,26 +1,36 @@
 /**
- * Link Bot — link-gap analysis + outreach email drafting.
+ * Link Bot — two execution modes:
  *
- * Pipeline:
- *   1. Pull the client's top 5 organic competitors from Ahrefs (cached).
- *   2. Pull the referring-domains list for the client AND each competitor
- *      (also cached, weekly bucket — so a fresh task in week N costs 6
- *      Ahrefs calls and every other link task that week costs 0).
- *   3. Compute the link gap: domains that link to ≥2 competitors but NOT
- *      to the client. Score them by `domain_rating + log(competitor_count) * 10`
- *      and take the top 15.
- *   4. Upsert into `link_prospects` (deduped on client_id + domain).
- *   5. For each prospect, ask OpenClaw to draft a personalized cold-outreach
- *      email — short, specific, no generic flattery. Save to `outreach_drafts`
- *      as `pending_review`.
- *   6. Update the strategy_task to `needs_approval`, write a summary into
- *      notes, log activity.
+ * 1. **Strategist-driven mode** (preferred for early-stage clients)
+ *    Triggered when the strategist includes a `link_targets` array in the
+ *    task metadata. The strategist hand-picks 10-15 plausible targets based
+ *    on industry knowledge — niche blogs, trade associations, podcasts,
+ *    local directories, complementary services, guest post opportunities.
+ *    Each target has a `domain` and an `angle` (the pitch reason). The bot
+ *    upserts them as `link_prospects` with `source='strategist'`, optionally
+ *    enriches with Ahrefs DR as a sanity check, and fans out OpenClaw calls
+ *    to draft personalized outreach using the angle as context. No Ahrefs
+ *    gap analysis is required — the bot will still run if Ahrefs is missing.
+ *
+ * 2. **Ahrefs gap-analysis mode** (the default when no link_targets given)
+ *    a. Pull the client's top 5 organic competitors from Ahrefs (cached).
+ *    b. Pull the referring-domains list for the client AND each competitor
+ *       (also cached, weekly bucket — so a fresh task in week N costs 6
+ *       Ahrefs calls and every other link task that week costs 0).
+ *    c. Compute the link gap: domains that link to ≥2 competitors but NOT
+ *       to the client. Score by `DR + log(competitor_count)*10`, take top 15.
+ *    d. Upsert into `link_prospects` with `source='gap_analysis'`.
+ *    e. Draft outreach via OpenClaw; save to `outreach_drafts`.
+ *    This mode requires a client with meaningful backlink data (~DR 15+,
+ *    20+ referring domains). Escalates otherwise.
+ *
+ * Both modes end the same way: update the strategy_task to `needs_approval`,
+ * write a summary into notes, log activity.
  *
  * Failure modes:
- *   - Missing AHREFS_API_KEY → escalated (this bot is useless without Ahrefs)
- *   - Missing OpenClaw env   → still succeeds with prospects only; drafts skipped
- *   - Ahrefs gap is empty    → succeeds with summary "no gap found"
- *   - All-fail              → failed
+ *   - Missing AHREFS_API_KEY  → gap mode escalates; strategist mode still runs
+ *   - Missing OpenClaw env    → prospects saved; outreach drafting skipped
+ *   - Empty gap               → succeeds with "no gap found" summary
  */
 
 import {
@@ -81,7 +91,50 @@ interface DraftedOutreach {
   body:    string
 }
 
-export async function runLinkBot({
+interface StrategistLinkTarget {
+  domain: string
+  angle?: string
+}
+
+export async function runLinkBot(input: LinkBotInput): Promise<BotExecutionResult> {
+  // ── Mode switch ──────────────────────────────────────────────────────
+  // If the strategist hand-picked targets at task creation time, use
+  // strategist-driven mode and skip Ahrefs gap analysis entirely. This
+  // lets the Link Bot produce value for early-stage clients that don't
+  // yet have enough backlink data for a meaningful gap analysis.
+  const targets = extractStrategistTargets(input.task.metadata)
+  if (targets.length > 0) {
+    console.log(`[link-bot] Strategist mode: ${targets.length} hand-picked targets`)
+    return runLinkBotFromTargets(input, targets)
+  }
+  return runLinkBotGapAnalysis(input)
+}
+
+/**
+ * Read task.metadata.link_targets safely and normalize into a clean list.
+ * Tolerates missing metadata, non-array values, and malformed entries.
+ */
+function extractStrategistTargets(
+  metadata: Record<string, unknown> | null | undefined,
+): StrategistLinkTarget[] {
+  if (!metadata || typeof metadata !== 'object') return []
+  const raw = (metadata as { link_targets?: unknown }).link_targets
+  if (!Array.isArray(raw)) return []
+  const out: StrategistLinkTarget[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as { domain?: unknown; angle?: unknown }
+    const domain = typeof row.domain === 'string' ? normalizeDomain(row.domain) : ''
+    if (!domain) continue
+    out.push({
+      domain,
+      angle: typeof row.angle === 'string' ? row.angle : undefined,
+    })
+  }
+  return out
+}
+
+async function runLinkBotGapAnalysis({
   supabase, client, task, standingOrder,
 }: LinkBotInput): Promise<BotExecutionResult> {
   // ── 1. Pull competitors ──────────────────────────────────────────────
@@ -215,6 +268,7 @@ export async function runLinkBot({
           competitor_link_count: p.competitor_link_count,
           prospect_score:        p.prospect_score,
           why:                   p.why,
+          source:                'gap_analysis',
           updated_at:            new Date().toISOString(),
         }, { onConflict: 'client_id,domain' })
         .select('id, domain')
@@ -287,7 +341,300 @@ export async function runLinkBot({
   }
 }
 
-// ── OpenClaw outreach drafter ───────────────────────────────────────────
+// ── Strategist-driven mode ──────────────────────────────────────────────
+// When the strategist provides `link_targets` in task.metadata, we skip
+// the whole Ahrefs gap-analysis pipeline and work directly off that list.
+// This is the primary mode for early-stage clients who don't have enough
+// backlink data for a meaningful competitor gap analysis.
+async function runLinkBotFromTargets(
+  { supabase, client, task }: LinkBotInput,
+  targets: StrategistLinkTarget[],
+): Promise<BotExecutionResult> {
+  // De-dupe on normalized domain — guard against strategist repeating themselves
+  const deduped: StrategistLinkTarget[] = []
+  const seen = new Set<string>()
+  for (const t of targets) {
+    if (seen.has(t.domain)) continue
+    seen.add(t.domain)
+    deduped.push(t)
+  }
+
+  // Optional Ahrefs enrichment: pull DR for each target as a sanity check.
+  // Best-effort — if Ahrefs is missing or fails, we proceed with null DR
+  // rather than failing the whole run.
+  const enrichment = await enrichTargetsWithAhrefs(supabase, client.id, deduped)
+
+  // ── Upsert prospects with source='strategist' ────────────────────────
+  const insertedProspects: { id: string; domain: string; angle: string | undefined; domain_rating: number | null }[] = []
+  for (const target of deduped) {
+    const dr = enrichment[target.domain] ?? null
+    const why = target.angle
+      ? target.angle
+      : `Hand-picked by strategist.`
+    try {
+      const { data, error } = await supabase
+        .from('link_prospects')
+        .upsert({
+          client_id:             client.id,
+          task_id:               task.id,
+          domain:                target.domain,
+          domain_rating:         dr,
+          domain_traffic:        null,
+          competitors_linking:   [],
+          competitor_link_count: 0,
+          // Prospect score is DR when present, otherwise a neutral 50 so
+          // strategist-picked rows still sort above obvious junk.
+          prospect_score:        dr ?? 50,
+          why,
+          source:                'strategist',
+          updated_at:            new Date().toISOString(),
+        }, { onConflict: 'client_id,domain' })
+        .select('id, domain')
+        .single() as { data: { id: string; domain: string } | null; error: { message: string } | null }
+
+      if (error) {
+        console.warn(`[link-bot] Failed to upsert strategist prospect ${target.domain}:`, error.message)
+        continue
+      }
+      if (data) {
+        insertedProspects.push({
+          id:            data.id,
+          domain:        data.domain,
+          angle:         target.angle,
+          domain_rating: dr,
+        })
+      }
+    } catch (err) {
+      console.warn(`[link-bot] Unexpected upsert error for ${target.domain}:`, err)
+    }
+  }
+
+  // ── Fan out OpenClaw outreach drafts using the strategist's angle ────
+  let draftCount = 0
+  if (GATEWAY_URL && GATEWAY_TOKEN) {
+    const drafts = await Promise.allSettled(
+      insertedProspects.map(p =>
+        draftOutreachFromAngle(client, task, p.domain, p.angle, p.domain_rating)
+          .then(draft => ({ p, draft })),
+      ),
+    )
+    for (const result of drafts) {
+      if (result.status !== 'fulfilled' || !result.value.draft) continue
+      const { p, draft } = result.value
+      try {
+        await supabase
+          .from('outreach_drafts')
+          .insert({
+            client_id:   client.id,
+            prospect_id: p.id,
+            task_id:     task.id,
+            subject:     draft.subject,
+            body:        draft.body,
+            tone:        'direct',
+            status:      'pending_review',
+            agent_id:    LINK_AGENT_ID,
+            agent_notes: `Strategist-picked target: ${p.domain}. Angle: ${p.angle ?? 'n/a'}`,
+          })
+        draftCount++
+      } catch (err) {
+        console.warn(`[link-bot] Failed to insert strategist outreach_draft for ${p.domain}:`, err)
+      }
+    }
+  } else {
+    console.warn('[link-bot] OpenClaw env missing — skipping email drafting, strategist prospects only.')
+  }
+
+  // ── Summary + task update ────────────────────────────────────────────
+  const summary = formatStrategistSummary(deduped, insertedProspects.length, draftCount, enrichment)
+  await markTaskNeedsApproval(supabase, task.id, summary, 'link-bot:strategist')
+  await logActivity(supabase, client.id, 'link', 'prospects_generated', summary, {
+    task_id:   task.id,
+    mode:      'strategist',
+    prospects: insertedProspects.length,
+    drafts:    draftCount,
+    targets:   deduped.length,
+  })
+
+  return {
+    status:  'succeeded',
+    summary,
+    output:  {
+      mode:      'strategist',
+      prospects: insertedProspects.length,
+      drafts:    draftCount,
+      targets:   deduped.length,
+    },
+  }
+}
+
+/**
+ * Best-effort DR enrichment for strategist-picked targets. Uses the same
+ * cached `fetchReferringDomains` pathway as gap mode, but here we're calling
+ * it on the TARGET's own domain just to grab its DR from the first row the
+ * refdomains response contains. Any error for any target is silently swallowed
+ * — strategist mode should still function without Ahrefs.
+ *
+ * NOTE: We're not using a dedicated "domain overview" Ahrefs endpoint here
+ * to avoid adding another call path. This uses whatever the existing ahrefs
+ * helpers already support. If AHREFS_API_KEY is missing, every call throws
+ * AhrefsKeyMissingError and we return an empty enrichment map.
+ */
+async function enrichTargetsWithAhrefs(
+  supabase: SupabaseClient,
+  clientId: string,
+  targets:  StrategistLinkTarget[],
+): Promise<Record<string, number | null>> {
+  const out: Record<string, number | null> = {}
+  if (targets.length === 0) return out
+  try {
+    // Probe Ahrefs with the first target. If it throws AhrefsKeyMissingError,
+    // we short-circuit the whole enrichment (no point hammering a missing key).
+    await fetchReferringDomains({
+      supabase, clientId, target: targets[0].domain, limit: 1,
+    })
+  } catch (err) {
+    if (err instanceof AhrefsKeyMissingError) {
+      console.log('[link-bot] Strategist mode: Ahrefs key missing, skipping DR enrichment')
+      return out
+    }
+    // Other errors we'll catch per-target below
+  }
+
+  const enriched = await Promise.allSettled(
+    targets.map(async t => {
+      const raw = await fetchReferringDomains({
+        supabase, clientId, target: t.domain, limit: 1,
+      })
+      const rows = extractRefdomains(raw)
+      const dr = rows[0]?.domain_rating ?? null
+      return { domain: t.domain, dr }
+    }),
+  )
+  for (const r of enriched) {
+    if (r.status === 'fulfilled') {
+      out[r.value.domain] = r.value.dr
+    }
+  }
+  return out
+}
+
+function formatStrategistSummary(
+  targets:     StrategistLinkTarget[],
+  upserted:    number,
+  draftCount:  number,
+  enrichment:  Record<string, number | null>,
+): string {
+  const lines: string[] = []
+  lines.push(`**Link Bot (strategist mode) processed ${upserted} hand-picked target${upserted === 1 ? '' : 's'}.**`)
+  lines.push('')
+  const hasDR = Object.values(enrichment).some(v => v !== null && v !== undefined)
+  if (hasDR) {
+    lines.push(`Enriched with Ahrefs DR where available.`)
+  } else {
+    lines.push(`Ahrefs enrichment unavailable — prospects saved with strategist-provided angles only.`)
+  }
+  if (draftCount > 0) {
+    lines.push(`Drafted ${draftCount} personalized outreach email${draftCount === 1 ? '' : 's'} (status: pending_review).`)
+  } else {
+    lines.push(`No outreach emails drafted (OpenClaw unavailable). Prospects saved.`)
+  }
+  lines.push('')
+  lines.push(`**Targets:**`)
+  for (const t of targets.slice(0, 15)) {
+    const dr = enrichment[t.domain]
+    const drStr = dr !== null && dr !== undefined ? ` — DR ${dr}` : ''
+    const angleStr = t.angle ? ` — ${t.angle}` : ''
+    lines.push(`- \`${t.domain}\`${drStr}${angleStr}`)
+  }
+  lines.push('')
+  lines.push(`Open the **Link Prospects** view to review and approve outreach.`)
+  return lines.join('\n')
+}
+
+/**
+ * Variant of draftOutreach that uses the strategist's angle as primary
+ * context instead of gap-analysis data. Keeps the same output format so
+ * the parser below is shared.
+ */
+async function draftOutreachFromAngle(
+  client:        ClientRow,
+  task:          StrategyTask,
+  domain:        string,
+  angle:         string | undefined,
+  domainRating:  number | null,
+): Promise<DraftedOutreach | null> {
+  const systemPrompt =
+    `You are a senior outreach strategist for an SEO agency. ` +
+    `You write short, specific cold pitches that get replies — never generic ` +
+    `flattery, never "I love your blog!", never multi-paragraph essays. ` +
+    `\n\n` +
+    `Output format — respond with EXACTLY this structure, no preamble:\n` +
+    `\n` +
+    `SUBJECT: <subject line, 6-9 words, no clickbait>\n` +
+    `---\n` +
+    `<email body, 90-130 words, plain text, two short paragraphs max, ` +
+    `signed "— ${client.name} team">\n` +
+    `\n` +
+    `Rules:\n` +
+    `- Open with a specific, honest reason you're reaching out (the angle below).\n` +
+    `- Make a concrete offer (resource, data, guest contribution, collaboration).\n` +
+    `- One soft CTA. No "circle back" language.\n` +
+    `- Never invent stats. Use only the facts provided.`
+
+  const userPrompt =
+    `Client: ${client.name} (${client.domain})\n` +
+    (client.industry ? `Industry: ${client.industry}\n` : '') +
+    `Task context: ${task.title}\n` +
+    (task.description ? `Task notes: ${task.description}\n` : '') +
+    `\n` +
+    `Prospect: ${domain}\n` +
+    `Strategist's angle (use this as the pitch reason): ${angle ?? 'Hand-picked by strategist — craft a generic but relevant opener for this vertical.'}\n` +
+    (domainRating !== null ? `Ahrefs DR: ${domainRating}\n` : '') +
+    `\n` +
+    `Draft the pitch.`
+
+  try {
+    const res = await fetch(`${GATEWAY_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${GATEWAY_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: `openclaw/${LINK_AGENT_ID}`,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userPrompt   },
+        ],
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(45_000),
+    })
+
+    if (!res.ok) {
+      console.warn(`[link-bot] OpenClaw ${res.status} for ${domain}`)
+      return null
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any = await res.json()
+    const raw: string = data?.choices?.[0]?.message?.content ?? ''
+    if (!raw || raw.length < 30) return null
+
+    const sepIdx = raw.indexOf('\n---')
+    const head   = sepIdx >= 0 ? raw.slice(0, sepIdx) : ''
+    const body   = sepIdx >= 0 ? raw.slice(sepIdx + 4).trim() : raw.trim()
+    const subjectMatch = head.match(/SUBJECT:\s*(.+)/i)
+    const subject = subjectMatch?.[1]?.trim() ?? `Quick note from ${client.name}`
+
+    return { subject, body }
+  } catch (err) {
+    console.warn(`[link-bot] Draft failed for ${domain}:`, err)
+    return null
+  }
+}
+
+// ── OpenClaw outreach drafter (gap-analysis mode) ───────────────────────
 
 async function draftOutreach(
   client:  ClientRow,

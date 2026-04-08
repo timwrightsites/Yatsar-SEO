@@ -44,6 +44,12 @@ export interface StrategyTask {
   status:      string
   priority:    string
   notes:       string | null
+  /**
+   * Free-form per-task payload written by the strategist at task-creation
+   * time. Bots can branch on fields here to enter alternate execution modes
+   * (e.g. link_targets for the Link Bot's strategist-driven mode).
+   */
+  metadata:    Record<string, unknown> | null
 }
 
 export interface BotRunRecord {
