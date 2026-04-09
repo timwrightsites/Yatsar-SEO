@@ -19,6 +19,7 @@ using this exact format so it is saved to the dashboard automatically:
 {
   "name": "Strategy Name Here",
   "description": "One-line summary of the strategy",
+  "strategy_id": null,
   "tasks": [
     {
       "title": "Task title",
@@ -48,6 +49,19 @@ Rules for the :::strategy block:
 - "due_date" should be YYYY-MM-DD format or null
 - Include as many tasks as needed
 - This block will be parsed automatically — do NOT try to call any API yourself
+
+CRITICAL — Appending tasks to an existing strategy:
+- When you want to ADD tasks to an existing strategy (e.g. the user says "add this to the
+  current strategy", "also do X", "add a recurring analytics task"), set "strategy_id" to
+  the ID of the existing strategy. You can see existing strategy IDs in the conversation
+  context or prior :::strategy blocks.
+- When "strategy_id" is set, the tasks are APPENDED to that strategy — no new row is created.
+- When "strategy_id" is null or omitted, the system will STILL try to match by name against
+  the client's most recent active strategy. If the name matches, tasks are appended.
+- Only set "strategy_id" to null AND use a brand new name when you genuinely intend to start
+  a completely new strategy.
+- DEFAULT BEHAVIOR: When in doubt, APPEND to the existing active strategy rather than
+  creating a new one. Most clients should have ONE active strategy at a time.
 
 Link Bot modes:
 - For a "link" type task, you can OPTIONALLY include a "link_targets" array
@@ -338,6 +352,7 @@ async function extractAndSaveStrategy(
   let parsed: {
     name: string
     description?: string
+    strategy_id?: string | null
     tasks?: {
       title: string
       description?: string
@@ -376,23 +391,91 @@ async function extractAndSaveStrategy(
   const validPriorities = ['high', 'medium', 'low']
 
   try {
-    // 1. Create the strategy row
-    const { data: strategy, error: stratErr } = await supabase
-      .from('strategies')
-      .insert({
-        client_id: clientId,
-        name: parsed.name,
-        description: parsed.description || null,
-      })
-      .select('id')
-      .single()
+    // ── 1. Resolve strategy: reuse existing or create new ──────────
+    // Priority order:
+    //   a) explicit strategy_id from the :::strategy block
+    //   b) name-match against client's most recent active strategy
+    //   c) fall back to creating a new row
+    let strategyId: string | null = null
 
-    if (stratErr || !strategy) {
-      console.error('[agent] Failed to create strategy:', stratErr)
-      return []
+    // (a) Explicit ID provided by strategist
+    if (parsed.strategy_id) {
+      const { data: existing } = await supabase
+        .from('strategies')
+        .select('id')
+        .eq('id', parsed.strategy_id)
+        .eq('client_id', clientId)
+        .single()
+
+      if (existing) {
+        strategyId = existing.id
+        console.log(`[agent] Appending tasks to existing strategy ${strategyId} (explicit ID)`)
+      }
     }
 
-    console.log(`[agent] Created strategy "${parsed.name}" (${strategy.id}) for client ${clientId}`)
+    // (b) Name match — look for an active strategy with the same name
+    if (!strategyId) {
+      const { data: nameMatch } = await supabase
+        .from('strategies')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('status', 'active')
+        .ilike('name', parsed.name)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (nameMatch) {
+        strategyId = nameMatch.id
+        console.log(`[agent] Appending tasks to existing strategy ${strategyId} (name match: "${parsed.name}")`)
+      }
+    }
+
+    // (b2) If no name match, try the most recent active strategy for this client
+    //      This handles cases like "add this to the current strategy" where the
+    //      strategist gives a slightly different name.
+    if (!strategyId) {
+      const { data: mostRecent } = await supabase
+        .from('strategies')
+        .select('id, name')
+        .eq('client_id', clientId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (mostRecent) {
+        strategyId = mostRecent.id
+        console.log(`[agent] Appending tasks to most recent active strategy ${strategyId} ("${mostRecent.name}")`)
+        // Optionally update the description if the strategist provided a new one
+        if (parsed.description) {
+          await supabase
+            .from('strategies')
+            .update({ description: parsed.description, updated_at: new Date().toISOString() })
+            .eq('id', strategyId)
+        }
+      }
+    }
+
+    // (c) No existing strategy found — create a new one
+    if (!strategyId) {
+      const { data: strategy, error: stratErr } = await supabase
+        .from('strategies')
+        .insert({
+          client_id: clientId,
+          name: parsed.name,
+          description: parsed.description || null,
+        })
+        .select('id')
+        .single()
+
+      if (stratErr || !strategy) {
+        console.error('[agent] Failed to create strategy:', stratErr)
+        return []
+      }
+      strategyId = strategy.id
+      console.log(`[agent] Created NEW strategy "${parsed.name}" (${strategyId}) for client ${clientId}`)
+    }
 
     // 2. Insert tasks if any
     if (parsed.tasks && parsed.tasks.length > 0) {
@@ -413,7 +496,7 @@ async function extractAndSaveStrategy(
         }
 
         return {
-          strategy_id: strategy.id,
+          strategy_id: strategyId,
           client_id: clientId,
           title: t.title,
           description: t.description || null,
