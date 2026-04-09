@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type TaskStatus   = 'todo' | 'in_progress' | 'needs_approval' | 'approved' | 'live'
-type TaskType     = 'content' | 'technical' | 'link' | 'keyword' | 'meta' | 'other'
+type TaskType     = 'content' | 'technical' | 'link' | 'keyword' | 'meta' | 'analytics' | 'audit' | 'geo' | 'optimizer' | 'alerter' | 'reporter' | 'other'
 type TaskPriority = 'high' | 'medium' | 'low'
 
 interface Task {
@@ -24,6 +24,8 @@ interface Task {
   output_ref:     string | null
   notes:          string | null
   created_at:     string
+  // Joined from parent — so we can show which strategy a task belongs to
+  _strategy_name?: string
 }
 
 interface Strategy {
@@ -48,7 +50,24 @@ const COLUMNS: { id: TaskStatus; label: string; color: string; dot: string }[] =
 
 const TYPE_LABELS: Record<TaskType, string> = {
   content: 'Content', technical: 'Technical', link: 'Link',
-  keyword: 'Keyword', meta: 'Meta', other: 'Other',
+  keyword: 'Keyword', meta: 'Meta', analytics: 'Analytics',
+  audit: 'Audit', geo: 'GEO', optimizer: 'Optimizer',
+  alerter: 'Alerter', reporter: 'Reporter', other: 'Other',
+}
+
+const TYPE_COLORS: Record<string, string> = {
+  content: 'bg-yellow-500/10 text-yellow-300/80',
+  technical: 'bg-green-500/10 text-green-300/80',
+  link: 'bg-blue-500/10 text-blue-300/80',
+  keyword: 'bg-orange-500/10 text-orange-300/80',
+  analytics: 'bg-cyan-500/10 text-cyan-300/80',
+  audit: 'bg-rose-500/10 text-rose-300/80',
+  geo: 'bg-purple-500/10 text-purple-300/80',
+  optimizer: 'bg-emerald-500/10 text-emerald-300/80',
+  alerter: 'bg-red-500/10 text-red-300/80',
+  reporter: 'bg-indigo-500/10 text-indigo-300/80',
+  meta: 'bg-white/5 text-white/40',
+  other: 'bg-white/5 text-white/40',
 }
 
 const PRIORITY_COLORS: Record<TaskPriority, string> = {
@@ -84,9 +103,9 @@ function TaskCard({ task, onStatusChange }: {
         </div>
 
         {/* Tags row */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] text-white/30 bg-white/5 px-1.5 py-0.5 rounded">
-            {TYPE_LABELS[task.type]}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className={cn('text-[10px] px-1.5 py-0.5 rounded', TYPE_COLORS[task.type] ?? TYPE_COLORS.other)}>
+            {TYPE_LABELS[task.type] ?? task.type}
           </span>
           <span className={cn('flex items-center gap-0.5 text-[10px]', PRIORITY_COLORS[task.priority])}>
             <Flag size={8} />{task.priority}
@@ -96,20 +115,23 @@ function TaskCard({ task, onStatusChange }: {
               <Calendar size={8} />{new Date(task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
             </span>
           )}
-          {task.assigned_agent && (
-            <span className="text-[10px] text-white/20 truncate max-w-[80px]">{task.assigned_agent}</span>
-          )}
         </div>
       </div>
 
       {/* Expanded detail */}
       {open && (
-        <div className="px-3 pb-3 pt-0 border-t border-white/5 space-y-2">
+        <div className="px-3 pb-3 pt-0 border-t border-white/5 space-y-2 mt-0">
+          {task._strategy_name && (
+            <p className="text-white/20 text-[10px] pt-2">Strategy: {task._strategy_name}</p>
+          )}
           {task.description && (
             <p className="text-white/40 text-[11px] leading-relaxed">{task.description}</p>
           )}
           {task.notes && (
             <p className="text-white/30 text-[11px] italic">{task.notes}</p>
+          )}
+          {task.assigned_agent && (
+            <p className="text-white/20 text-[10px]">Agent: {task.assigned_agent}</p>
           )}
           {task.output_ref && (
             <a href={task.output_ref} target="_blank" rel="noopener noreferrer"
@@ -134,11 +156,9 @@ function TaskCard({ task, onStatusChange }: {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function StrategyPanel({ clientId }: { clientId: string }) {
-  const [strategies, setStrategies]     = useState<Strategy[]>([])
-  const [loading, setLoading]           = useState(true)
-  const [error, setError]               = useState<string | null>(null)
-  const [expanded, setExpanded]         = useState<Set<string>>(new Set())
-  const [activeStrategy, setActive]     = useState<string | null>(null)
+  const [strategies, setStrategies] = useState<Strategy[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -147,12 +167,6 @@ export function StrategyPanel({ clientId }: { clientId: string }) {
       const data = await res.json()
       if (data.error) throw new Error(data.error)
       setStrategies(data)
-      // Auto-expand first active strategy
-      const first = data.find((s: Strategy) => s.status === 'active')
-      if (first) {
-        setExpanded(new Set([first.id]))
-        setActive(first.id)
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load strategies')
     } finally {
@@ -165,12 +179,21 @@ export function StrategyPanel({ clientId }: { clientId: string }) {
   // Re-fetch when the agent saves a new strategy (fires from AgentPanel)
   useEffect(() => {
     const onStrategyUpdated = () => {
-      // Small delay so the DB write from the agent route has time to commit
       setTimeout(() => load(), 1500)
     }
     window.addEventListener('strategy-updated', onStrategyUpdated)
     return () => window.removeEventListener('strategy-updated', onStrategyUpdated)
   }, [load])
+
+  // Flatten ALL tasks from ALL strategies into one pool, sorted by priority then date
+  const allTasks: Task[] = strategies.flatMap(s =>
+    s.strategy_tasks.map(t => ({ ...t, _strategy_name: s.name }))
+  ).sort((a, b) => {
+    const pOrder = { high: 0, medium: 1, low: 2 }
+    const pDiff = (pOrder[a.priority] ?? 1) - (pOrder[b.priority] ?? 1)
+    if (pDiff !== 0) return pDiff
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  })
 
   const updateTaskStatus = async (taskId: string, status: TaskStatus) => {
     const res = await fetch(`/api/strategies/tasks/${taskId}`, {
@@ -186,18 +209,9 @@ export function StrategyPanel({ clientId }: { clientId: string }) {
     }
   }
 
-  const toggleExpand = (id: string) => {
-    setExpanded(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-    setActive(id)
-  }
-
   if (loading) return (
     <div className="bg-[#141414] border border-white/8 rounded-lg p-5 flex items-center gap-2 text-white/30 text-sm">
-      <Loader2 size={14} className="animate-spin" /> Loading strategy…
+      <Loader2 size={14} className="animate-spin" /> Loading tasks…
     </div>
   )
 
@@ -207,119 +221,76 @@ export function StrategyPanel({ clientId }: { clientId: string }) {
     </div>
   )
 
-  if (strategies.length === 0) return (
+  const approvalCount = allTasks.filter(t => t.status === 'needs_approval').length
+
+  if (allTasks.length === 0) return (
     <div className="bg-[#141414] border border-white/8 rounded-lg p-5">
       <div className="flex items-center justify-between mb-1">
         <p className="text-white font-semibold text-sm">Strategy</p>
       </div>
       <p className="text-white/25 text-xs mt-3">
-        No strategy defined yet. Start a conversation with the SEO Co-Strategist in the chat below — when you agree on a strategy, it will appear here as a kanban board.
+        No tasks yet. Start a conversation with the SEO Co-Strategist in the AI Chat tab — when you agree on a strategy, tasks will appear here as a kanban board.
       </p>
     </div>
   )
-
-  const current = strategies.find(s => s.id === activeStrategy) ?? strategies[0]
-  const tasks   = current?.strategy_tasks ?? []
-
-  const approvalCount = tasks.filter(t => t.status === 'needs_approval').length
 
   return (
     <div className="bg-[#141414] border border-white/8 rounded-lg p-5">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <p className="text-white font-semibold text-sm">Strategy</p>
+          <p className="text-white font-semibold text-sm">All Tasks</p>
           {approvalCount > 0 && (
             <span className="flex items-center gap-1 text-[10px] bg-yellow-400/10 border border-yellow-400/20 text-yellow-400 px-2 py-0.5 rounded-full">
               {approvalCount} need{approvalCount === 1 ? 's' : ''} approval
             </span>
           )}
         </div>
-        {/* Strategy switcher — shown when multiple */}
-        {strategies.length > 1 && (
-          <div className="flex items-center gap-1">
-            {strategies.map(s => (
-              <button key={s.id} onClick={() => { setActive(s.id); setExpanded(new Set([s.id])) }}
-                className={cn(
-                  'px-2.5 py-1 rounded text-[11px] font-medium transition-all',
-                  activeStrategy === s.id ? 'bg-white/8 text-white' : 'text-white/30 hover:text-white/60'
-                )}>
-                {s.name}
-              </button>
-            ))}
-          </div>
-        )}
+        <span className="text-white/20 text-[11px]">{allTasks.length} tasks across {strategies.length} {strategies.length === 1 ? 'strategy' : 'strategies'}</span>
       </div>
 
-      {/* Strategy name + description */}
-      {current && (
-        <div className="mb-4">
-          <div className="flex items-center gap-2">
-            <h3 className="text-white/70 text-xs font-medium">{current.name}</h3>
-            <span className={cn(
-              'text-[10px] px-1.5 py-0.5 rounded border',
-              current.status === 'active'    ? 'border-[#22c55e]/30 text-[#22c55e]' :
-              current.status === 'paused'    ? 'border-yellow-400/30 text-yellow-400' :
-                                               'border-white/15 text-white/30'
-            )}>{current.status}</span>
-          </div>
-          {current.description && (
-            <p className="text-white/30 text-[11px] mt-1 leading-relaxed">{current.description}</p>
-          )}
-        </div>
-      )}
-
       {/* Kanban board */}
-      {tasks.length === 0 ? (
-        <div className="flex items-center gap-2 py-6 justify-center">
-          <Plus size={13} className="text-white/20" />
-          <p className="text-white/25 text-xs">No tasks yet — the Co-Strategist will populate these as work is planned</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-5 gap-3">
-          {COLUMNS.map(col => {
-            const colTasks = tasks.filter(t => t.status === col.id)
-            return (
-              <div key={col.id} className="flex flex-col gap-2">
-                {/* Column header */}
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', col.dot)} />
-                  <span className={cn('text-[10px] font-medium uppercase tracking-wide', col.color)}>
-                    {col.label}
-                  </span>
-                  <span className="text-[10px] text-white/20 ml-auto">{colTasks.length}</span>
-                </div>
-
-                {/* Tasks */}
-                {colTasks.map(task => (
-                  <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} />
-                ))}
-
-                {colTasks.length === 0 && (
-                  <div className="border border-dashed border-white/6 rounded-lg h-16 flex items-center justify-center">
-                    <span className="text-white/10 text-[10px]">empty</span>
-                  </div>
-                )}
+      <div className="grid grid-cols-5 gap-3">
+        {COLUMNS.map(col => {
+          const colTasks = allTasks.filter(t => t.status === col.id)
+          return (
+            <div key={col.id} className="flex flex-col gap-2">
+              {/* Column header */}
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', col.dot)} />
+                <span className={cn('text-[10px] font-medium uppercase tracking-wide', col.color)}>
+                  {col.label}
+                </span>
+                <span className="text-[10px] text-white/20 ml-auto">{colTasks.length}</span>
               </div>
-            )
-          })}
-        </div>
-      )}
+
+              {/* Tasks */}
+              {colTasks.map(task => (
+                <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} />
+              ))}
+
+              {colTasks.length === 0 && (
+                <div className="border border-dashed border-white/6 rounded-lg h-16 flex items-center justify-center">
+                  <span className="text-white/10 text-[10px]">empty</span>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
 
       {/* Task summary bar */}
-      {tasks.length > 0 && (
-        <div className="flex items-center gap-4 mt-4 pt-3 border-t border-white/5">
-          {COLUMNS.map(col => {
-            const count = tasks.filter(t => t.status === col.id).length
-            return count > 0 ? (
-              <span key={col.id} className={cn('text-[11px]', col.color)}>
-                {count} {col.label.toLowerCase()}
-              </span>
-            ) : null
-          })}
-          <span className="text-white/20 text-[11px] ml-auto">{tasks.length} total tasks</span>
-        </div>
-      )}
+      <div className="flex items-center gap-4 mt-4 pt-3 border-t border-white/5">
+        {COLUMNS.map(col => {
+          const count = allTasks.filter(t => t.status === col.id).length
+          return count > 0 ? (
+            <span key={col.id} className={cn('text-[11px]', col.color)}>
+              {count} {col.label.toLowerCase()}
+            </span>
+          ) : null
+        })}
+        <span className="text-white/20 text-[11px] ml-auto">{allTasks.length} total</span>
+      </div>
     </div>
   )
 }
