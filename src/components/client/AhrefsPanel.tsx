@@ -423,7 +423,7 @@ export function AhrefsPanel({ clientId, domain }: Props) {
   const fetchKeywordsPage = useCallback(async (page: number, fresh = false) => {
     setKeywords(s => ({ ...s, loading: true, error: null }))
     try {
-      const res = await fetch(`/api/ahrefs/organic-keywords?clientId=${clientId}&target=${encodeURIComponent(domain)}&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}${fresh ? '&fresh=1' : ''}`)
+      const res = await fetch(`/api/ahrefs/organic-keywords?clientId=${clientId}&target=${encodeURIComponent(domain)}&limit=${PAGE_SIZE}${fresh ? '&fresh=1' : ''}`)
       const json = await res.json()
       if (json.code === 'KEY_MISSING') {
         const start = page * PAGE_SIZE
@@ -442,7 +442,7 @@ export function AhrefsPanel({ clientId, domain }: Props) {
   const fetchTopPagesPage = useCallback(async (page: number, fresh = false) => {
     setTopPages(s => ({ ...s, loading: true, error: null }))
     try {
-      const res = await fetch(`/api/ahrefs/top-pages?clientId=${clientId}&target=${encodeURIComponent(domain)}&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}${fresh ? '&fresh=1' : ''}`)
+      const res = await fetch(`/api/ahrefs/top-pages?clientId=${clientId}&target=${encodeURIComponent(domain)}&limit=${PAGE_SIZE}${fresh ? '&fresh=1' : ''}`)
       const json = await res.json()
       if (json.code === 'KEY_MISSING') {
         const start = page * PAGE_SIZE

@@ -7,7 +7,6 @@ export async function GET(req: Request) {
   const clientId = searchParams.get('clientId')
   const target   = searchParams.get('target')
   const limit    = Number(searchParams.get('limit')  ?? 25)
-  const offset   = Number(searchParams.get('offset') ?? 0)
   const country  = searchParams.get('country') ?? undefined
   const fresh    = searchParams.get('fresh') === '1'
 
@@ -17,7 +16,7 @@ export async function GET(req: Request) {
 
   try {
     const supabase = await createClient()
-    const data = await fetchOrganicKeywords({ supabase, clientId, target, limit, offset, country, forceFresh: fresh })
+    const data = await fetchOrganicKeywords({ supabase, clientId, target, limit, country, forceFresh: fresh })
     return NextResponse.json(data)
   } catch (err) {
     if (err instanceof AhrefsKeyMissingError) {

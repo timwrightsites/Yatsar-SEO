@@ -230,7 +230,6 @@ export interface OrganicKeywordsParams {
   clientId:   string
   target:     string
   limit?:     number
-  offset?:    number
   country?:   string
   forceFresh?: boolean
 }
@@ -258,7 +257,7 @@ const ORGANIC_KEYWORDS_SELECT = [
 ].join(',')
 
 export async function fetchOrganicKeywords({
-  supabase, clientId, target, limit = STANDARD_ROW_CAP, offset = 0, country, forceFresh,
+  supabase, clientId, target, limit = STANDARD_ROW_CAP, country, forceFresh,
 }: OrganicKeywordsParams) {
   return ahrefsGet({
     supabase, clientId, forceFresh,
@@ -271,7 +270,6 @@ export async function fetchOrganicKeywords({
       select:        ORGANIC_KEYWORDS_SELECT,
       order_by:      'sum_traffic_merged:desc',
       limit:         Math.min(limit, STANDARD_ROW_CAP),
-      offset,
     },
   })
 }
@@ -281,7 +279,6 @@ export interface TopPagesParams {
   clientId:   string
   target:     string
   limit?:     number
-  offset?:    number
   country?:   string
   forceFresh?: boolean
 }
@@ -301,7 +298,7 @@ const TOP_PAGES_SELECT = [
 ].join(',')
 
 export async function fetchTopPages({
-  supabase, clientId, target, limit = STANDARD_ROW_CAP, offset = 0, country, forceFresh,
+  supabase, clientId, target, limit = STANDARD_ROW_CAP, country, forceFresh,
 }: TopPagesParams) {
   return ahrefsGet({
     supabase, clientId, forceFresh,
@@ -314,7 +311,6 @@ export async function fetchTopPages({
       select:        TOP_PAGES_SELECT,
       order_by:      'sum_traffic_merged:desc',
       limit:         Math.min(limit, STANDARD_ROW_CAP),
-      offset,
     },
   })
 }
@@ -523,31 +519,26 @@ export async function fetchGeoVisibility({
   supabase, clientId, target, country, limit = 50, forceFresh,
 }: GeoVisibilityParams): Promise<GeoVisibilityReport> {
   const t        = normalizeTarget(target)
-  const cap      = Math.min(limit, 100)
+  const cap      = Math.min(limit, STANDARD_ROW_CAP)  // Ahrefs doesn't support offset, single page only
   const country_ = country ?? 'us'
 
-  // Two-page pull so we can sample 50 rows on a Standard plan (25/page).
-  const pages    = Math.ceil(cap / STANDARD_ROW_CAP)
-  const pulls    = await Promise.all(
-    Array.from({ length: pages }).map((_, i) =>
-      ahrefsGet({
-        supabase, clientId, forceFresh,
-        endpoint: 'site-explorer/organic-keywords',
-        params: {
-          target:        t,
-          date:          weekBucketISO(),
-          date_compared: lastMonthISO(),
-          country:       country_,
-          select:        GEO_SELECT,
-          order_by:      'sum_traffic_merged:desc',
-          limit:         STANDARD_ROW_CAP,
-          offset:        i * STANDARD_ROW_CAP,
-        },
-      }),
-    ),
-  )
+  // Single pull — Ahrefs organic-keywords doesn't support the `offset` param.
+  // We get up to 25 rows (Standard plan cap) sorted by traffic descending.
+  const raw = await ahrefsGet({
+    supabase, clientId, forceFresh,
+    endpoint: 'site-explorer/organic-keywords',
+    params: {
+      target:        t,
+      date:          weekBucketISO(),
+      date_compared: lastMonthISO(),
+      country:       country_,
+      select:        GEO_SELECT,
+      order_by:      'sum_traffic_merged:desc',
+      limit:         cap,
+    },
+  })
 
-  const rawRows = pulls.flatMap(coerceArray).slice(0, cap)
+  const rawRows = coerceArray(raw).slice(0, cap)
 
   const rows: GeoKeywordRow[] = rawRows.map((r) => {
     const features = normalizeSerpFeatures(r.serp_features)
