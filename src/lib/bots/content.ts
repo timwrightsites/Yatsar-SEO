@@ -229,6 +229,42 @@ function buildSystemPrompt(
     `- Do NOT explain what you're doing. Just emit the formatted draft.`,
   )
 
+  // ── GEO (Generative Engine Optimization) instructions ──────────────
+  // If the Ahrefs context includes a "GEO visibility" section, the content
+  // bot knows which keywords trigger AI Overviews and should structure the
+  // article to maximize the chance of being cited in generative answers.
+  if (ahrefsContext.includes('GEO (Generative Engine Optimization)')) {
+    parts.push(
+      `GEO optimization rules (apply ALWAYS when the target keyword appears ` +
+      `in the "Keywords with AI Overviews" table above — and apply as a best ` +
+      `practice even when it doesn't):\n` +
+      `- Lead with a concise, self-contained answer (2–3 sentences) in the ` +
+      `first paragraph that directly answers the search intent. AI models ` +
+      `cite pages that give a clear answer early.\n` +
+      `- Use question-style H2s (e.g. "What is…", "How does…", "Why should…") ` +
+      `— these map to the queries AI Overviews synthesize answers from.\n` +
+      `- Include a structured data hint block at the end of the article:\n` +
+      `  \`\`\`\n` +
+      `  <!-- Schema: FAQPage -->\n` +
+      `  Q: <rephrase the H2 as a question>\n` +
+      `  A: <1-2 sentence summary of that section>\n` +
+      `  (repeat for each H2)\n` +
+      `  \`\`\`\n` +
+      `  The dev team uses this block to generate JSON-LD FAQ schema on publish.\n` +
+      `- Add a "Key Takeaways" or "TL;DR" section near the top (after the ` +
+      `intro) as a bulleted summary of the 3–5 main points — AI models ` +
+      `extract these as citation-ready chunks.\n` +
+      `- Where factual claims are made, add inline attribution markers like ` +
+      `"[Source: BLS.gov]" or "[Per Ahrefs data]" — AI models prefer ` +
+      `content that itself cites sources, because it signals factual grounding.\n` +
+      `- Prefer comparison tables and definition lists over long paragraphs ` +
+      `for any section that compares options, lists criteria, or defines terms.\n` +
+      `- Avoid walls of text. Short paragraphs (2–4 sentences max), generous ` +
+      `whitespace, and scannable formatting make the content easier for both ` +
+      `humans and AI models to parse.`,
+    )
+  }
+
   return parts.join('\n\n')
 }
 

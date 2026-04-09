@@ -11,6 +11,7 @@ import { PageSpeedPanel } from '@/components/client/PageSpeedPanel'
 import { IndexationPanel } from '@/components/client/IndexationPanel'
 import { StrategyPanel } from '@/components/client/StrategyPanel'
 import { AhrefsPanel } from '@/components/client/AhrefsPanel'
+import { GeoPanel } from '@/components/client/GeoPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
 import { ArchiveButton } from '@/components/client/ArchiveButton'
 import { ContentSection } from '@/components/client/ContentSection'
@@ -301,6 +302,19 @@ export default async function ClientPage({ params, searchParams }: Props) {
             </details>
           </div>
         </>
+      )}
+
+      {/* ─── GEO (Generative Engine Optimization) TAB ─────────────── */}
+      {activeTab === 'geo' && (
+        <div className="mb-6">
+          {client.domain ? (
+            <GeoPanel clientId={client.id} domain={client.domain} />
+          ) : (
+            <div className="bg-[#141414] border border-white/8 rounded-lg p-8 text-center text-white/40 text-sm">
+              Add a domain to this client to load GEO visibility data.
+            </div>
+          )}
+        </div>
       )}
 
       {/* ─── CONTENT DRAFTS TAB ───────────────────────────────────── */}

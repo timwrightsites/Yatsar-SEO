@@ -7,14 +7,16 @@ import {
   Link2,
   Target,
   MessageSquare,
+  Sparkles,
 } from 'lucide-react'
 
-export const TAB_KEYS = ['overview', 'seo', 'content', 'links', 'strategy', 'chat'] as const
+export const TAB_KEYS = ['overview', 'seo', 'geo', 'content', 'links', 'strategy', 'chat'] as const
 export type TabKey = (typeof TAB_KEYS)[number]
 
 const TABS: { key: TabKey; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'overview', label: 'Overview',        icon: LayoutDashboard },
   { key: 'seo',      label: 'SEO Data',        icon: TrendingUp      },
+  { key: 'geo',      label: 'GEO',             icon: Sparkles        },
   { key: 'content',  label: 'Content Drafts',  icon: FileText        },
   { key: 'links',    label: 'Link Prospects',  icon: Link2           },
   { key: 'strategy', label: 'Strategy',        icon: Target          },

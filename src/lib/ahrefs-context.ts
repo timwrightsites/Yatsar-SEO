@@ -22,7 +22,9 @@ import {
   fetchOrganicKeywords,
   fetchTopPages,
   fetchCompetitors,
+  fetchGeoVisibility,
   AhrefsKeyMissingError,
+  type GeoVisibilityReport,
 } from './ahrefs'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -144,6 +146,43 @@ function formatCompetitors(raw: any): string {
   return lines.join('\n')
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatGeoVisibility(raw: any): string {
+  if (!raw) return ''
+  const r = raw as GeoVisibilityReport
+  if (!r.total_keywords_sampled) return ''
+
+  const ratePct = Math.round(r.ai_overview_rate * 100)
+  const aiKws   = (r.keywords ?? []).filter(k => k.has_ai_overview)
+
+  const lines = [
+    '### GEO (Generative Engine Optimization) visibility',
+    '',
+    `Of the top ${r.total_keywords_sampled} traffic-driving keywords:`,
+    `- **${ratePct}%** (${r.ai_overview_count} keywords) trigger an **AI Overview** on the SERP`,
+    `- Those AI-Overview keywords drive **${fmtNum(r.ai_overview_traffic)}** monthly visits`,
+    `- **${r.featured_snippet_count}** keywords have a Featured Snippet`,
+    `- **${r.knowledge_panel_count}** keywords show a Knowledge Panel`,
+    `- **${r.branded_ai_count}** of the AI-Overview keywords are branded`,
+    '',
+    'Keywords with AI Overviews (these are the GEO opportunity set — content targeting these should be structured for AI citation):',
+  ]
+
+  if (aiKws.length > 0) {
+    lines.push('| Keyword | Pos | Vol | Traffic | Features |')
+    lines.push('|---------|-----|-----|---------|----------|')
+    aiKws.slice(0, 20).forEach(k => {
+      const kw       = k.keyword.replace(/\|/g, '\\|')
+      const features = k.serp_features.join(', ')
+      lines.push(`| ${kw} | ${fmtNum(k.position)} | ${fmtNum(k.volume)} | ${fmtNum(k.traffic)} | ${features} |`)
+    })
+  } else {
+    lines.push('*(None of the sampled keywords currently trigger an AI Overview.)*')
+  }
+
+  return lines.join('\n')
+}
+
 // ── Public entry point ───────────────────────────────────────────────────
 
 /**
@@ -159,11 +198,12 @@ export async function buildAhrefsContext({
   try {
     // All four calls hit the 7-day Supabase cache, so on a warm cache this
     // costs zero Ahrefs units and resolves in milliseconds.
-    const [overview, keywords, topPages, competitors] = await Promise.all([
-      fetchOverview({       supabase, clientId, target: domain }).catch(silent('overview')),
+    const [overview, keywords, topPages, competitors, geoVis] = await Promise.all([
+      fetchOverview({        supabase, clientId, target: domain }).catch(silent('overview')),
       fetchOrganicKeywords({ supabase, clientId, target: domain, limit: 25 }).catch(silent('keywords')),
-      fetchTopPages({       supabase, clientId, target: domain, limit: 25 }).catch(silent('top-pages')),
-      fetchCompetitors({    supabase, clientId, target: domain, limit: 10 }).catch(silent('competitors')),
+      fetchTopPages({        supabase, clientId, target: domain, limit: 25 }).catch(silent('top-pages')),
+      fetchCompetitors({     supabase, clientId, target: domain, limit: 10 }).catch(silent('competitors')),
+      fetchGeoVisibility({   supabase, clientId, target: domain, limit: 50 }).catch(silent('geo-visibility')),
     ])
 
     const sections = [
@@ -171,6 +211,7 @@ export async function buildAhrefsContext({
       formatKeywords(keywords),
       formatTopPages(topPages),
       formatCompetitors(competitors),
+      formatGeoVisibility(geoVis),
     ].filter(Boolean)
 
     if (!sections.length) return ''
