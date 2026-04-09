@@ -367,7 +367,12 @@ async function extractAndSaveStrategy(
     return []
   }
 
-  const validTypes = ['content', 'technical', 'link', 'keyword', 'meta', 'other']
+  const validTypes = [
+    // inline bots
+    'content', 'technical', 'link', 'meta', 'other',
+    // gateway-spawned operational agents (routed via dispatch-gateway.ts)
+    'analytics', 'audit', 'keyword', 'geo', 'optimizer', 'alerter', 'reporter',
+  ]
   const validPriorities = ['high', 'medium', 'low']
 
   try {
