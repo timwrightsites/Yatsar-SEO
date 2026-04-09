@@ -23,7 +23,7 @@ using this exact format so it is saved to the dashboard automatically:
     {
       "title": "Task title",
       "description": "What needs to be done",
-      "type": "content|technical|link|keyword|meta|other",
+      "type": "content|technical|link|keyword|meta|analytics|audit|geo|optimizer|alerter|reporter|other",
       "priority": "high|medium|low",
       "due_date": "YYYY-MM-DD or null",
       "assigned_agent": "agent name or null",
@@ -39,7 +39,11 @@ using this exact format so it is saved to the dashboard automatically:
 Rules for the :::strategy block:
 - Only include it when a strategy or set of tasks has been agreed upon or finalized
 - The JSON must be valid — no trailing commas, no comments
-- "type" must be one of: content, technical, link, keyword, meta, other
+- "type" must be one of: content, technical, link, keyword, meta, analytics, audit, geo, optimizer, alerter, reporter, other
+- Types analytics | audit | keyword | geo | optimizer | alerter | reporter are dispatched to
+  OpenClaw operational agents via the gateway bridge. They run autonomously and update
+  bot_runs themselves. Use these types when the work is research-, crawl-, or reporting-heavy
+  and would time out inside the dashboard's serverless lambda.
 - "priority" must be one of: high, medium, low
 - "due_date" should be YYYY-MM-DD format or null
 - Include as many tasks as needed

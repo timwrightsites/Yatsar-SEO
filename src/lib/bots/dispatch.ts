@@ -27,6 +27,7 @@
 import { runTechnicalBot } from './technical'
 import { runContentBot }   from './content'
 import { runLinkBot }      from './link'
+import { dispatchGatewayAgent, isGatewayBotType } from './dispatch-gateway'
 import type {
   BotExecutionResult,
   BotRunRecord,
@@ -38,11 +39,19 @@ import type {
 } from './types'
 
 const TASK_TYPE_TO_BOT: Record<string, BotType | undefined> = {
+  // Inline bots (execute in the Vercel lambda)
   technical: 'technical',
   content:   'content',
   link:      'link',
-  keyword:   'content',  // keyword research routes to content bot
   meta:      'content',  // meta tag work routes to content bot
+  // Gateway-spawned operational agents (execute in OpenClaw runtime)
+  keyword:   'keyword',    // was 'content' — now routes to keyword-agent
+  analytics: 'analytics',
+  audit:     'audit',
+  geo:       'geo',
+  optimizer: 'optimizer',
+  alerter:   'alerter',
+  reporter:  'reporter',
   // 'other' has no bot — dispatcher will skip it
 }
 
@@ -110,6 +119,29 @@ export async function dispatchBotForTask({
 
   if (!client) {
     return { ok: false, reason: 'Client not found' }
+  }
+
+  // ── 4b. Gateway routing fork ──────────────────────────────
+  // Operational agents (analytics/audit/keyword/geo/optimizer/alerter/reporter)
+  // execute in the OpenClaw runtime, not inside this lambda. The gateway
+  // dispatcher opens the bot_runs row, fires the spawn request in the
+  // background via waitUntil, and returns immediately. The agent itself
+  // handles the final PATCH to bot_runs via direct PostgREST curl.
+  if (isGatewayBotType(botType)) {
+    const gwResult = await dispatchGatewayAgent({
+      supabase,
+      task,
+      client,
+      botType,
+      standingOrder,
+      triggerSource,
+    })
+    return {
+      ok:     gwResult.ok,
+      runId:  gwResult.runId,
+      status: gwResult.status,
+      reason: gwResult.reason,
+    }
   }
 
   // ── 5. Open a bot_runs row + flip task and bot_configs to running ──
@@ -201,6 +233,10 @@ interface ExecuteBotArgs {
 }
 
 async function executeBot(args: ExecuteBotArgs): Promise<BotExecutionResult> {
+  // Gateway-spawned operational agents are intercepted earlier in
+  // dispatchBotForTask by the isGatewayBotType() fork, so they should
+  // never reach this switch. If one does, that's a programmer error —
+  // fail loudly rather than silently returning undefined.
   switch (args.botType) {
     case 'technical':
       return runTechnicalBot({
@@ -223,6 +259,12 @@ async function executeBot(args: ExecuteBotArgs): Promise<BotExecutionResult> {
         task:          args.task,
         standingOrder: args.standingOrder,
       })
+    default:
+      return {
+        status: 'failed',
+        error:  `executeBot() reached for gateway-only bot_type='${args.botType}'. ` +
+                `This should have been intercepted by isGatewayBotType() in dispatchBotForTask.`,
+      }
   }
 }
 

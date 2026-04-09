@@ -10,7 +10,21 @@
  * complete audit trail of what each bot did, when, and why.
  */
 
-export type BotType = 'content' | 'link' | 'technical'
+export type BotType =
+  // Inline bots — run inside the Vercel lambda via src/lib/bots/{technical,content,link}.ts
+  | 'content'
+  | 'link'
+  | 'technical'
+  // Gateway-spawned operational agents — run in the OpenClaw runtime,
+  // fan-out via sessions_spawn, update bot_runs themselves via PostgREST curl.
+  // See src/lib/bots/dispatch-gateway.ts for the routing + brief builder.
+  | 'analytics'
+  | 'audit'
+  | 'keyword'
+  | 'geo'
+  | 'optimizer'
+  | 'alerter'
+  | 'reporter'
 
 export type BotRunStatus =
   | 'queued'
