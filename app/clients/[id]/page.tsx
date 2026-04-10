@@ -11,6 +11,7 @@ import { PageSpeedPanel } from '@/components/client/PageSpeedPanel'
 import { IndexationPanel } from '@/components/client/IndexationPanel'
 import { StrategyPanel } from '@/components/client/StrategyPanel'
 import { GanttChart } from '@/components/dashboard/GanttChart'
+import { AISummary } from '@/components/client/AISummary'
 import { AhrefsPanel } from '@/components/client/AhrefsPanel'
 import { GeoPanel } from '@/components/client/GeoPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
@@ -165,6 +166,9 @@ export default async function ClientPage({ params, searchParams }: Props) {
       {/* ─── OVERVIEW TAB ─────────────────────────────────────────── */}
       {activeTab === 'overview' && (
         <>
+          {/* AI Status Briefing */}
+          <AISummary clientId={client.id} />
+
           {/* Metric cards — use GSC live data when no stored metrics exist */}
           <div className="grid grid-cols-4 gap-4 mb-6">
             {safeMetrics.length > 0 ? (
