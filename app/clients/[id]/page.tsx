@@ -13,6 +13,7 @@ import { StrategyPanel } from '@/components/client/StrategyPanel'
 import { GanttChart } from '@/components/dashboard/GanttChart'
 import { AISummary } from '@/components/client/AISummary'
 import { AhrefsPanel } from '@/components/client/AhrefsPanel'
+import { CompetitorPanel } from '@/components/client/CompetitorPanel'
 import { GeoPanel } from '@/components/client/GeoPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
 import { ArchiveButton } from '@/components/client/ArchiveButton'
@@ -294,6 +295,11 @@ export default async function ClientPage({ params, searchParams }: Props) {
               <AhrefsPanel clientId={client.id} domain={client.domain} />
             </div>
           ) : null}
+
+          {/* Competitors */}
+          <div className="mb-6">
+            <CompetitorPanel clientId={client.id} />
+          </div>
 
           <div className="mb-6">
             <details className="group">
