@@ -6,6 +6,7 @@ import { BotActivity } from '@/components/dashboard/BotActivity'
 import { AddClientModal } from '@/components/dashboard/AddClientModal'
 import { ContentApprovalsList } from '@/components/dashboard/ContentApprovalsList'
 import { AllTasksPanel } from '@/components/dashboard/AllTasksPanel'
+import { GanttChart } from '@/components/dashboard/GanttChart'
 import { cn } from '@/lib/utils'
 import type { Client, ActivityLog } from '@/types/database'
 
@@ -105,6 +106,11 @@ export function DashboardShell({ clients, logs, drafts, mrrDisplay }: Props) {
               )}
             </div>
             <ContentApprovalsList drafts={drafts} />
+          </div>
+
+          {/* 2-week Gantt timeline */}
+          <div className="mb-6">
+            <GanttChart />
           </div>
 
           {/* All tasks across clients */}

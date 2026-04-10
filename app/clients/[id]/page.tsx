@@ -10,6 +10,7 @@ import { GSCMetricCards } from '@/components/client/GSCMetricCards'
 import { PageSpeedPanel } from '@/components/client/PageSpeedPanel'
 import { IndexationPanel } from '@/components/client/IndexationPanel'
 import { StrategyPanel } from '@/components/client/StrategyPanel'
+import { GanttChart } from '@/components/dashboard/GanttChart'
 import { AhrefsPanel } from '@/components/client/AhrefsPanel'
 import { GeoPanel } from '@/components/client/GeoPanel'
 import { ClientConfigPanel } from '@/components/client/ClientConfigPanel'
@@ -337,9 +338,14 @@ export default async function ClientPage({ params, searchParams }: Props) {
 
       {/* ─── STRATEGY TAB ─────────────────────────────────────────── */}
       {activeTab === 'strategy' && (
-        <div className="mb-6">
-          <StrategyPanel clientId={client.id} />
-        </div>
+        <>
+          <div className="mb-6">
+            <GanttChart clientId={client.id} />
+          </div>
+          <div className="mb-6">
+            <StrategyPanel clientId={client.id} />
+          </div>
+        </>
       )}
 
       {/* ─── CHAT TAB ─────────────────────────────────────────────── */}
