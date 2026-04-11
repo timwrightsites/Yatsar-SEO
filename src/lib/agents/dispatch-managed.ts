@@ -348,7 +348,7 @@ export async function streamManagedSession(
 
   // The Managed Agents streaming endpoint returns SSE
   const response = await fetch(
-    `https://api.anthropic.com/v1/sessions/${sessionId}/stream?beta=true`,
+    `https://api.anthropic.com/v1/sessions/${sessionId}/stream`,
     {
       method: 'GET',
       headers: {

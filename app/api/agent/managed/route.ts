@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
         sessionConfig.vault_ids = [MANAGED_VAULT_ID]
       }
       console.log('[agent/managed] Creating session:', JSON.stringify(sessionConfig))
-      const createRes = await fetch('https://api.anthropic.com/v1/sessions?beta=true', {
+      const createRes = await fetch('https://api.anthropic.com/v1/sessions', {
         method: 'POST',
         headers,
         body: JSON.stringify(sessionConfig),
@@ -223,7 +223,7 @@ export async function POST(req: NextRequest) {
 
   // ── 5. Send user message ──────────────────────────────────
   try {
-    const sendRes = await fetch(`https://api.anthropic.com/v1/sessions/${sessionId}/events?beta=true`, {
+    const sendRes = await fetch(`https://api.anthropic.com/v1/sessions/${sessionId}/events`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -248,7 +248,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── 6. Stream response back ───────────────────────────────
-  const streamRes = await fetch(`https://api.anthropic.com/v1/sessions/${sessionId}/stream?beta=true`, {
+  const streamRes = await fetch(`https://api.anthropic.com/v1/sessions/${sessionId}/stream`, {
     method: 'GET',
     headers: {
       'x-api-key': apiKey,
