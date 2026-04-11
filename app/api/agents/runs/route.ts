@@ -58,19 +58,8 @@ export async function GET(req: Request) {
     const client = clientMap.get(run.client_id)
     const task = run.task_id ? taskMap.get(run.task_id) : null
 
-    // Extract summary from output JSON if available
-    let summary = ''
-    if (run.output && typeof run.output === 'object') {
-      const o = run.output as Record<string, unknown>
-      // Only use values that are actually strings (the `as string` cast doesn't convert at runtime)
-      const candidates = [o.summary, o.report_summary, o.notes, o.message]
-      summary = (candidates.find(v => typeof v === 'string' && v.length > 0) as string) ?? ''
-      // If no direct summary field, try to build one from the output keys
-      if (!summary && Object.keys(o).length > 0) {
-        const keys = Object.keys(o).slice(0, 3).join(', ')
-        summary = `Output: ${keys}…`
-      }
-    }
+    // Extract a conversational summary from output JSON
+    const summary = buildConversationalSummary(run.output, run.bot_type, run.error_message)
 
     return {
       id: run.id,
@@ -93,4 +82,86 @@ export async function GET(req: Request) {
   })
 
   return NextResponse.json(enriched)
+}
+
+// ── Conversational summary builder ──────────────────────────────────────────
+
+function buildConversationalSummary(
+  output: unknown,
+  botType: string,
+  errorMessage: string | null,
+): string {
+  if (errorMessage) return ''  // errors shown separately
+
+  if (!output || typeof output !== 'object') return ''
+
+  const o = output as Record<string, unknown>
+
+  // First, check for an explicit string summary field
+  for (const key of ['summary', 'report_summary', 'notes', 'message']) {
+    if (typeof o[key] === 'string' && (o[key] as string).length > 0) {
+      return (o[key] as string).slice(0, 200)
+    }
+  }
+
+  // Build a natural-language summary based on bot type + output shape
+  switch (botType) {
+    case 'keyword': {
+      const parts: string[] = []
+      if (typeof o.gap_count === 'number') parts.push(`Found ${o.gap_count} keyword gap${o.gap_count === 1 ? '' : 's'}`)
+      if (typeof o.quick_win_count === 'number') parts.push(`${o.quick_win_count} quick win${o.quick_win_count === 1 ? '' : 's'}`)
+      if (typeof o.high_priority_count === 'number') parts.push(`${o.high_priority_count} high priority`)
+      if (typeof o.total_opportunity_vol === 'number') parts.push(`~${o.total_opportunity_vol.toLocaleString()} vol opportunity`)
+      if (typeof o.avg_difficulty === 'number') parts.push(`avg difficulty ${o.avg_difficulty}`)
+      if (typeof o.recommendation === 'string') return o.recommendation.slice(0, 200)
+      return parts.length > 0 ? parts.join(' · ') : 'Keyword analysis complete'
+    }
+    case 'content': {
+      const parts: string[] = []
+      if (typeof o.drafts_created === 'number') parts.push(`Created ${o.drafts_created} draft${o.drafts_created === 1 ? '' : 's'}`)
+      if (typeof o.words_written === 'number') parts.push(`${o.words_written.toLocaleString()} words`)
+      if (typeof o.topics_covered === 'number') parts.push(`${o.topics_covered} topics`)
+      return parts.length > 0 ? parts.join(' · ') : 'Content generation complete'
+    }
+    case 'link': {
+      const parts: string[] = []
+      if (typeof o.prospects_found === 'number') parts.push(`Found ${o.prospects_found} prospect${o.prospects_found === 1 ? '' : 's'}`)
+      if (typeof o.outreach_sent === 'number') parts.push(`${o.outreach_sent} outreach drafted`)
+      if (typeof o.avg_domain_rating === 'number') parts.push(`avg DR ${o.avg_domain_rating}`)
+      return parts.length > 0 ? parts.join(' · ') : 'Link prospecting complete'
+    }
+    case 'technical':
+    case 'audit': {
+      const parts: string[] = []
+      if (typeof o.issues_found === 'number') parts.push(`Found ${o.issues_found} issue${o.issues_found === 1 ? '' : 's'}`)
+      if (typeof o.critical_count === 'number') parts.push(`${o.critical_count} critical`)
+      if (typeof o.pages_crawled === 'number') parts.push(`${o.pages_crawled} pages crawled`)
+      return parts.length > 0 ? parts.join(' · ') : 'Technical audit complete'
+    }
+    case 'analytics': {
+      const parts: string[] = []
+      if (typeof o.insights_count === 'number') parts.push(`${o.insights_count} insight${o.insights_count === 1 ? '' : 's'}`)
+      if (typeof o.traffic_change === 'string') parts.push(o.traffic_change)
+      return parts.length > 0 ? parts.join(' · ') : 'Analytics review complete'
+    }
+    case 'geo': {
+      const parts: string[] = []
+      if (typeof o.locations_analyzed === 'number') parts.push(`${o.locations_analyzed} location${o.locations_analyzed === 1 ? '' : 's'} analyzed`)
+      if (typeof o.citations_found === 'number') parts.push(`${o.citations_found} citations`)
+      return parts.length > 0 ? parts.join(' · ') : 'GEO analysis complete'
+    }
+    default: {
+      // Generic fallback — still conversational
+      const keys = Object.keys(o)
+      if (keys.length === 0) return ''
+      // Try to pull any numeric highlights
+      const highlights: string[] = []
+      for (const k of keys.slice(0, 4)) {
+        const v = o[k]
+        if (typeof v === 'number') highlights.push(`${k.replace(/_/g, ' ')}: ${v}`)
+        else if (typeof v === 'string' && v.length < 60) highlights.push(v)
+      }
+      return highlights.length > 0 ? highlights.join(' · ') : `${botType} agent finished`
+    }
+  }
 }

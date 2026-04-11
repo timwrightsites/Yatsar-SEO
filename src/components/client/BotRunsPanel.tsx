@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   Loader2, CheckCircle, XCircle, AlertTriangle, Clock,
-  ChevronDown, ChevronRight, Zap, ExternalLink, RefreshCw,
+  ChevronDown, ChevronRight, Zap, ExternalLink, RefreshCw, MessageSquare,
 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -132,7 +133,21 @@ function OutputViewer({ runId }: { runId: string }) {
 
 // ── Run row ────────────────────────────────────────────────────────────────────
 
-function RunRow({ run, showClient }: { run: BotRun; showClient: boolean }) {
+// Map bot_type to the closest chat agent ID
+const BOT_TO_AGENT: Record<string, string> = {
+  content: 'content-director',
+  keyword: 'seo-co-strategist',
+  link: 'seo-co-strategist',
+  technical: 'audit-director',
+  audit: 'audit-director',
+  analytics: 'growth-director',
+  geo: 'seo-co-strategist',
+  optimizer: 'seo-co-strategist',
+  alerter: 'growth-director',
+  reporter: 'growth-director',
+}
+
+function RunRow({ run, showClient, onFollowUp }: { run: BotRun; showClient: boolean; onFollowUp: (run: BotRun) => void }) {
   const [expanded, setExpanded] = useState(false)
   const pill = STATUS_PILL[run.status] ?? STATUS_PILL.queued
   const botColor = BOT_COLORS[run.bot_type] ?? 'bg-white/10 text-white/50'
@@ -216,12 +231,28 @@ function RunRow({ run, showClient }: { run: BotRun; showClient: boolean }) {
             <span className="text-white/25 text-[11px]">{run.client_name ?? '—'}</span>
           </td>
         )}
+
+        {/* Follow up */}
+        <td className="py-3 pr-4">
+          {(run.status === 'succeeded' || run.status === 'failed' || run.status === 'escalated') && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onFollowUp(run)
+              }}
+              className="flex items-center gap-1 text-[10px] text-white/20 hover:text-white/60 bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 hover:border-white/10 px-2 py-1 rounded transition-all"
+            >
+              <MessageSquare size={10} />
+              Follow up
+            </button>
+          )}
+        </td>
       </tr>
 
       {/* Expanded output */}
       {expanded && (
         <tr>
-          <td colSpan={showClient ? 8 : 7} className="bg-white/[0.01] border-t border-white/4">
+          <td colSpan={showClient ? 9 : 8} className="bg-white/[0.01] border-t border-white/4">
             <OutputViewer runId={run.id} />
           </td>
         </tr>
@@ -242,6 +273,22 @@ export function BotRunsPanel({ clientId }: BotRunsPanelProps) {
   const [error, setError] = useState<string | null>(null)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const showClient = !clientId
+  const router = useRouter()
+
+  function handleFollowUp(run: BotRun) {
+    // Navigate to the Chat tab with agent + context pre-filled
+    const agentId = BOT_TO_AGENT[run.bot_type] ?? 'seo-co-strategist'
+    const context = run.status === 'failed'
+      ? `The ${BOT_LABELS[run.bot_type] ?? run.bot_type} agent failed on "${run.task_title ?? 'a recent task'}". Error: ${run.error_message ?? 'unknown'}. What went wrong and what should we do next?`
+      : `The ${BOT_LABELS[run.bot_type] ?? run.bot_type} agent just finished "${run.task_title ?? 'a recent task'}". ${run.summary || ''} Walk me through the results and what we should do next.`
+    const targetClientId = run.client_id ?? clientId
+    const params = new URLSearchParams({
+      tab: 'chat',
+      agent: agentId,
+      prompt: context,
+    })
+    router.push(`/clients/${targetClientId}?${params.toString()}`)
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -383,11 +430,12 @@ export function BotRunsPanel({ clientId }: BotRunsPanelProps) {
                     {showClient && (
                       <th className="text-left text-white/20 text-[10px] font-medium uppercase tracking-wider py-2 pr-4">Client</th>
                     )}
+                    <th className="text-left text-white/20 text-[10px] font-medium uppercase tracking-wider py-2 pr-4 w-[90px]"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.03]">
                   {group.runs.map(run => (
-                    <RunRow key={run.id} run={run} showClient={showClient} />
+                    <RunRow key={run.id} run={run} showClient={showClient} onFollowUp={handleFollowUp} />
                   ))}
                 </tbody>
               </table>

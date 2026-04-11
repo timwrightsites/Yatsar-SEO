@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -24,8 +25,26 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
   const [agentId, setAgentId] = useState('seo-co-strategist')
   const [isStreaming, setIsStreaming] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [followUpApplied, setFollowUpApplied] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const searchParams = useSearchParams()
+
+  // Pick up follow-up context from URL params (set by Bot Runs "Follow up" button)
+  useEffect(() => {
+    if (followUpApplied) return
+    const agentParam = searchParams.get('agent')
+    const promptParam = searchParams.get('prompt')
+    if (agentParam && AGENTS.some(a => a.id === agentParam)) {
+      setAgentId(agentParam)
+    }
+    if (promptParam) {
+      setInput(promptParam)
+      setFollowUpApplied(true)
+      // Focus the textarea after a tick
+      setTimeout(() => textareaRef.current?.focus(), 100)
+    }
+  }, [searchParams, followUpApplied])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
