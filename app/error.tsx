@@ -20,9 +20,6 @@ export default function GlobalError({
         <p className="text-white/50 text-sm mb-4">
           {error.message || 'An unexpected error occurred.'}
         </p>
-        {error.digest && (
-          <p className="text-white/20 text-xs mb-4 font-mono">Digest: {error.digest}</p>
-        )}
         <div className="flex items-center justify-center gap-3">
           <button
             onClick={reset}
