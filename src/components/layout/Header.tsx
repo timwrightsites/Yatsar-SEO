@@ -1,6 +1,7 @@
 'use client'
 
-import { Bell, Search } from 'lucide-react'
+import { Search } from 'lucide-react'
+import { NotificationBell } from './NotificationBell'
 
 interface HeaderProps {
   title: string
@@ -24,10 +25,7 @@ export function Header({ title, subtitle }: HeaderProps) {
         </div>
 
         {/* Notifications */}
-        <button className="relative w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 border border-white/5 text-slate-400 hover:text-slate-200 transition">
-          <Bell size={15} />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-violet-500 rounded-full" />
-        </button>
+        <NotificationBell />
       </div>
     </header>
   )
