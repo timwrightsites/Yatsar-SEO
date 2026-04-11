@@ -24,6 +24,7 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { buildAhrefsContext } from '@/lib/ahrefs-context'
+import { buildMemoryContext, writeMemory, extractMemoryFromOutput } from '@/lib/client-memory'
 import { dispatchBotForTask } from '@/lib/bots/dispatch'
 
 export const runtime = 'nodejs'
@@ -141,6 +142,7 @@ export async function POST(req: NextRequest) {
 
   // ── 3. Build context ──────────────────────────────────────
   let ahrefsContext = ''
+  let memoryContext = ''
   try {
     const { data: client } = await supabase
       .from('clients')
@@ -158,9 +160,16 @@ export async function POST(req: NextRequest) {
     // Non-fatal
   }
 
+  try {
+    memoryContext = await buildMemoryContext({ supabase, clientId })
+  } catch {
+    // Non-fatal
+  }
+
   // Build the user message with context
   const lastUserMessage = messages[messages.length - 1]?.content || ''
   const contextBlock = [
+    memoryContext ? `\n\n${memoryContext}` : '',
     ahrefsContext ? `\n\n<seo_data>\n${ahrefsContext}\n</seo_data>` : '',
     `\n\n<instructions>\n${STRATEGY_SYSTEM_INSTRUCTION}\n</instructions>`,
   ].join('')
@@ -327,6 +336,21 @@ export async function POST(req: NextRequest) {
         }
       } catch (err) {
         console.error('[agent/managed] Strategy extraction failed:', err)
+      }
+
+      // ── 8. Extract and save memory entries ─────────────────
+      try {
+        const memoryEntries = extractMemoryFromOutput({}, fullResponse)
+        if (memoryEntries.length > 0) {
+          await Promise.allSettled(
+            memoryEntries.map(entry =>
+              writeMemory(supabase, { ...entry, clientId, agent: entry.agent || agentId }),
+            ),
+          )
+          console.log(`[agent/managed] Saved ${memoryEntries.length} memory entries`)
+        }
+      } catch (err) {
+        console.error('[agent/managed] Memory extraction failed:', err)
       }
     },
   })

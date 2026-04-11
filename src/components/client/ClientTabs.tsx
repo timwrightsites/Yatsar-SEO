@@ -9,9 +9,10 @@ import {
   MessageSquare,
   Sparkles,
   Zap,
+  Brain,
 } from 'lucide-react'
 
-export const TAB_KEYS = ['overview', 'seo', 'geo', 'content', 'links', 'strategy', 'runs', 'chat'] as const
+export const TAB_KEYS = ['overview', 'seo', 'geo', 'content', 'links', 'strategy', 'runs', 'memory', 'chat'] as const
 export type TabKey = (typeof TAB_KEYS)[number]
 
 const TABS: { key: TabKey; label: string; icon: typeof LayoutDashboard }[] = [
@@ -22,6 +23,7 @@ const TABS: { key: TabKey; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'links',    label: 'Link Prospects',  icon: Link2           },
   { key: 'strategy', label: 'Strategy',        icon: Target          },
   { key: 'runs',     label: 'Bot Runs',        icon: Zap             },
+  { key: 'memory',   label: 'Memory',          icon: Brain           },
   { key: 'chat',     label: 'AI Chat',         icon: MessageSquare   },
 ]
 

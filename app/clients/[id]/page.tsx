@@ -23,6 +23,7 @@ import type { ProspectWithDraft } from '@/components/client/OutreachEditor'
 import { ClientTabs, isTabKey, type TabKey } from '@/components/client/ClientTabs'
 import AgentPanel from '@/components/client/AgentPanel'
 import { BotRunsPanel } from '@/components/client/BotRunsPanel'
+import { MemoryPanel } from '@/components/client/MemoryPanel'
 import { cn } from '@/lib/utils'
 import type { Client, BotConfig, Metric, ActivityLog } from '@/types/database'
 
@@ -363,6 +364,13 @@ export default async function ClientPage({ params, searchParams }: Props) {
       {activeTab === 'runs' && (
         <div className="mb-6">
           <BotRunsPanel clientId={client.id} />
+        </div>
+      )}
+
+      {/* ─── MEMORY TAB ───────────────────────────────────────────── */}
+      {activeTab === 'memory' && (
+        <div className="mb-6">
+          <MemoryPanel clientId={client.id} />
         </div>
       )}
 

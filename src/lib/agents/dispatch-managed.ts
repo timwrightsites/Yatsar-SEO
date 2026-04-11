@@ -21,6 +21,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import { buildMemoryContext, logRunToMemory } from '../client-memory'
 import type {
   BotRunRecord,
   BotType,
@@ -157,9 +158,16 @@ export async function dispatchManagedAgent(
     .eq('client_id', task.client_id)
     .eq('bot_type', botType)
 
-  // ── 2. Build the agent brief ──
+  // ── 2. Build the agent brief (with memory context) ──
+  let memoryBlock = ''
+  try {
+    memoryBlock = await buildMemoryContext({ supabase, clientId: client.id })
+  } catch {
+    // Non-fatal
+  }
+
   const brief = buildAgentBrief({
-    agentId, botType, task, client, standingOrder, runId, customPrompt,
+    agentId, botType, task, client, standingOrder, runId, customPrompt, memoryBlock,
   })
 
   // ── 3. Create Managed Agent session + send brief ──
@@ -250,6 +258,7 @@ interface BuildBriefArgs {
   standingOrder: StandingOrder
   runId:         string
   customPrompt?: string
+  memoryBlock?:  string
 }
 
 function buildAgentBrief(args: BuildBriefArgs): string {
@@ -298,11 +307,28 @@ NEVER use "completed".
 Valid activity_logs.status values: success | warning | error | info.
 NEVER use "succeeded".`
 
+  if (args.memoryBlock) {
+    brief += `\n\n${args.memoryBlock}`
+  }
+
   if (customPrompt) {
     brief += `\n\nADDITIONAL INSTRUCTIONS FROM USER:\n${customPrompt}`
   }
 
-  brief += `\n\nWhen finished, return a completion report in this exact format:
+  brief += `\n\nMEMORY: If you discover noteworthy insights about this client (keyword opportunities,
+technical issues, content gaps, competitive intel, preferences), include a :::memory block
+at the end of your output so it gets saved for all future agents:
+
+:::memory
+[
+  { "agent": "${botType}", "category": "finding", "content": "Your insight here", "importance": "high" }
+]
+:::
+
+Categories: insight | decision | finding | issue | win | preference
+Importance: low | normal | high
+
+When finished, return a completion report in this exact format:
 
   STATUS: succeeded | failed | escalated
   BOT_RUN_ID: ${runId}
