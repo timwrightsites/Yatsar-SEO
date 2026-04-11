@@ -82,7 +82,7 @@ export async function GET(req: Request) {
     try {
       // Check session status via Managed Agents API
       const sessionRes = await fetch(
-        `https://api.anthropic.com/v1/sessions/${sessionId}`,
+        `https://api.anthropic.com/v1/sessions/${sessionId}?beta=true`,
         {
           headers: {
             'x-api-key': apiKey,
