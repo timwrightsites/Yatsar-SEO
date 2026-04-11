@@ -133,18 +133,18 @@ function OutputViewer({ runId }: { runId: string }) {
 
 // ── Run row ────────────────────────────────────────────────────────────────────
 
-// Map bot_type to the closest chat agent ID
+// Map bot_type to the chat agent ID (now 1:1 since all agents are in the dropdown)
 const BOT_TO_AGENT: Record<string, string> = {
-  content: 'content-director',
-  keyword: 'seo-co-strategist',
-  link: 'seo-co-strategist',
-  technical: 'audit-director',
-  audit: 'audit-director',
-  analytics: 'growth-director',
-  geo: 'seo-co-strategist',
-  optimizer: 'seo-co-strategist',
-  alerter: 'growth-director',
-  reporter: 'growth-director',
+  content: 'content',
+  keyword: 'keyword',
+  link: 'link',
+  technical: 'technical',
+  audit: 'audit',
+  analytics: 'analytics',
+  geo: 'geo',
+  optimizer: 'optimizer',
+  alerter: 'alerter',
+  reporter: 'reporter',
 }
 
 function RunRow({ run, showClient, onFollowUp }: { run: BotRun; showClient: boolean; onFollowUp: (run: BotRun) => void }) {
@@ -277,7 +277,7 @@ export function BotRunsPanel({ clientId }: BotRunsPanelProps) {
 
   function handleFollowUp(run: BotRun) {
     // Navigate to the Chat tab with agent + context pre-filled
-    const agentId = BOT_TO_AGENT[run.bot_type] ?? 'seo-co-strategist'
+    const agentId = BOT_TO_AGENT[run.bot_type] ?? 'keyword'
     const context = run.status === 'failed'
       ? `The ${BOT_LABELS[run.bot_type] ?? run.bot_type} agent failed on "${run.task_title ?? 'a recent task'}". Error: ${run.error_message ?? 'unknown'}. What went wrong and what should we do next?`
       : `The ${BOT_LABELS[run.bot_type] ?? run.bot_type} agent just finished "${run.task_title ?? 'a recent task'}". ${run.summary || ''} Walk me through the results and what we should do next.`

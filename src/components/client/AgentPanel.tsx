@@ -13,16 +13,22 @@ interface AgentPanelProps {
 }
 
 const AGENTS = [
-  { id: 'seo-co-strategist', label: 'SEO Co-Strategist' },
-  { id: 'growth-director', label: 'Growth Director' },
-  { id: 'audit-director', label: 'Audit Director' },
-  { id: 'content-director', label: 'Content Director' },
+  { id: 'keyword',   label: 'Keyword Agent' },
+  { id: 'content',   label: 'Content Writer' },
+  { id: 'link',      label: 'Link Builder' },
+  { id: 'technical', label: 'Technical SEO' },
+  { id: 'audit',     label: 'Site Crawler' },
+  { id: 'analytics', label: 'Analytics' },
+  { id: 'geo',       label: 'GEO / Local' },
+  { id: 'optimizer', label: 'Optimizer' },
+  { id: 'alerter',   label: 'Alerter' },
+  { id: 'reporter',  label: 'Reporter' },
 ]
 
 export default function AgentPanel({ clientId }: AgentPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [agentId, setAgentId] = useState('seo-co-strategist')
+  const [agentId, setAgentId] = useState('keyword')
   const [isStreaming, setIsStreaming] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [followUpApplied, setFollowUpApplied] = useState(false)
@@ -79,7 +85,8 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
         let detail = `Status ${res.status}`
         try {
           const errBody = await res.json()
-          detail = errBody.error || errBody.detail || detail
+          const parts = [errBody.error, errBody.detail].filter(Boolean)
+          detail = parts.join(' — ') || detail
         } catch {}
         throw new Error(detail)
       }
@@ -186,10 +193,16 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
               {AGENTS.find(a => a.id === agentId)?.label}
             </p>
             <p className="text-gray-600 text-xs mt-1 max-w-xs">
-              {agentId === 'seo-co-strategist' && 'Your SEO strategist. Ask about rankings, opportunities, strategy, or kick off a full audit.'}
-              {agentId === 'growth-director' && 'Keyword research, rank tracking, competitive analysis, and AEO opportunities.'}
-              {agentId === 'audit-director' && 'Technical SEO health, Core Web Vitals, indexation, and crawlability issues.'}
-              {agentId === 'content-director' && 'Content briefs, on-page optimization, internal linking, and content performance.'}
+              {agentId === 'keyword' && 'Keyword research, gap analysis, competitive targets, and opportunity scoring.'}
+              {agentId === 'content' && 'Content briefs, article drafts, on-page optimization, and content strategy.'}
+              {agentId === 'link' && 'Link prospecting, outreach drafts, backlink opportunities, and competitor analysis.'}
+              {agentId === 'technical' && 'Technical SEO fixes, site speed, schema markup, and crawlability.'}
+              {agentId === 'audit' && 'Full site audits, Core Web Vitals, indexation, and crawl issues.'}
+              {agentId === 'analytics' && 'Traffic analysis, rank tracking, conversion insights, and reporting.'}
+              {agentId === 'geo' && 'Local SEO, GBP optimization, citation building, and AEO opportunities.'}
+              {agentId === 'optimizer' && 'Page-level optimization, meta tags, internal linking, and quick wins.'}
+              {agentId === 'alerter' && 'Rank drops, indexation issues, traffic anomalies, and competitor moves.'}
+              {agentId === 'reporter' && 'Client reports, progress summaries, and performance dashboards.'}
             </p>
             <p className="text-gray-700 text-[10px] mt-3">
               Powered by Claude Managed Agents

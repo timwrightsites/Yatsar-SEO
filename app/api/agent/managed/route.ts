@@ -30,14 +30,18 @@ export const runtime = 'nodejs'
 export const maxDuration = 300
 
 // ── Chat agent → Managed Agent ID mapping ─────────────────────────────────
-// The chat tab has a dropdown with "roles" — each maps to one of your
-// managed agents in console.claude.com. The SEO Co-Strategist is the
-// writer agent (Sonnet 4.6), others map to their closest operational agent.
+// Maps the chat dropdown agent keys to env-var-based Managed Agent IDs.
 const CHAT_AGENT_MAP: Record<string, string> = {
-  'seo-co-strategist': process.env.MANAGED_AGENT_ID_CONTENT  || 'writer-agent',
-  'growth-director':   process.env.MANAGED_AGENT_ID_KEYWORD  || 'keyword-agent',
-  'audit-director':    process.env.MANAGED_AGENT_ID_AUDIT    || 'crawler-agent',
-  'content-director':  process.env.MANAGED_AGENT_ID_CONTENT  || 'writer-agent',
+  'keyword':    process.env.MANAGED_AGENT_ID_KEYWORD    || '',
+  'content':    process.env.MANAGED_AGENT_ID_CONTENT    || '',
+  'link':       process.env.MANAGED_AGENT_ID_LINK       || '',
+  'technical':  process.env.MANAGED_AGENT_ID_TECHNICAL  || '',
+  'audit':      process.env.MANAGED_AGENT_ID_AUDIT      || '',
+  'analytics':  process.env.MANAGED_AGENT_ID_ANALYTICS  || '',
+  'geo':        process.env.MANAGED_AGENT_ID_GEO        || '',
+  'optimizer':  process.env.MANAGED_AGENT_ID_OPTIMIZER  || '',
+  'alerter':    process.env.MANAGED_AGENT_ID_ALERTER    || '',
+  'reporter':   process.env.MANAGED_AGENT_ID_REPORTER   || '',
 }
 
 const MANAGED_ENV_ID = process.env.MANAGED_ENVIRONMENT_ID || ''
@@ -97,7 +101,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     clientId  = body.clientId
     messages  = body.messages
-    agentId   = body.agentId || 'seo-co-strategist'
+    agentId   = body.agentId || 'keyword'
     sessionId = body.sessionId || null
   } catch {
     return new Response(
@@ -183,6 +187,7 @@ export async function POST(req: NextRequest) {
       if (MANAGED_VAULT_ID) {
         sessionConfig.vault_ids = [MANAGED_VAULT_ID]
       }
+      console.log('[agent/managed] Creating session:', JSON.stringify(sessionConfig))
       const createRes = await fetch('https://api.anthropic.com/v1/sessions', {
         method: 'POST',
         headers,
@@ -190,8 +195,9 @@ export async function POST(req: NextRequest) {
       })
       if (!createRes.ok) {
         const err = await createRes.text().catch(() => '')
+        console.error('[agent/managed] Session creation failed:', createRes.status, err)
         return new Response(
-          JSON.stringify({ error: `Session creation failed: ${createRes.status}`, detail: err.slice(0, 500) }),
+          JSON.stringify({ error: `Session creation failed (${createRes.status})`, detail: err.slice(0, 500) }),
           { status: 502, headers: { 'Content-Type': 'application/json' } },
         )
       }
