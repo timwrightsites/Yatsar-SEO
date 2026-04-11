@@ -6,7 +6,7 @@
   "crons": [
     {
       "path": "/api/agents/check-sessions",
-      "schedule": "*/2 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
