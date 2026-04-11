@@ -62,11 +62,9 @@ export async function GET(req: Request) {
     let summary = ''
     if (run.output && typeof run.output === 'object') {
       const o = run.output as Record<string, unknown>
-      summary = (o.summary as string) ??
-                (o.report_summary as string) ??
-                (o.notes as string) ??
-                (o.message as string) ??
-                ''
+      // Only use values that are actually strings (the `as string` cast doesn't convert at runtime)
+      const candidates = [o.summary, o.report_summary, o.notes, o.message]
+      summary = (candidates.find(v => typeof v === 'string' && v.length > 0) as string) ?? ''
       // If no direct summary field, try to build one from the output keys
       if (!summary && Object.keys(o).length > 0) {
         const keys = Object.keys(o).slice(0, 3).join(', ')

@@ -205,7 +205,7 @@ function RunRow({ run, showClient }: { run: BotRun; showClient: boolean }) {
           <p className="text-white/30 text-[11px] truncate max-w-[200px]">
             {run.error_message
               ? <span className="text-red-400/50">{run.error_message.slice(0, 80)}</span>
-              : run.summary || '—'
+              : (typeof run.summary === 'string' ? run.summary : run.summary ? JSON.stringify(run.summary).slice(0, 80) : '—')
             }
           </p>
         </td>
