@@ -183,6 +183,7 @@ export async function POST(req: NextRequest) {
   // ── 4. Create or reuse session ────────────────────────────
   const headers: Record<string, string> = {
     'x-api-key': apiKey,
+    'anthropic-version': '2023-06-01',
     'anthropic-beta': 'managed-agents-2026-04-01',
     'content-type': 'application/json',
   }
@@ -251,6 +252,7 @@ export async function POST(req: NextRequest) {
     method: 'GET',
     headers: {
       'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
       'anthropic-beta': 'managed-agents-2026-04-01',
       'Accept': 'text/event-stream',
     },

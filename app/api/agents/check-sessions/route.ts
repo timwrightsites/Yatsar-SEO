@@ -86,6 +86,7 @@ export async function GET(req: Request) {
         {
           headers: {
             'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
             'anthropic-beta': 'managed-agents-2026-04-01',
             'content-type': 'application/json',
           },
