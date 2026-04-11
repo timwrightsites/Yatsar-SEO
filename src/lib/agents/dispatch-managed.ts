@@ -64,7 +64,7 @@ function getAnthropicClient(): Anthropic {
     _client = new Anthropic({
       apiKey,
       defaultHeaders: {
-        'anthropic-beta': 'managed-agents-2026-04-01',
+        'anthropic-beta': 'managed-agents-2026-04-01,agent-api-2026-03-01',
       },
     })
   }
@@ -353,7 +353,7 @@ export async function streamManagedSession(
       method: 'GET',
       headers: {
         'x-api-key': process.env.ANTHROPIC_API_KEY!,
-        'anthropic-beta': 'managed-agents-2026-04-01',
+        'anthropic-beta': 'managed-agents-2026-04-01,agent-api-2026-03-01',
         'Accept': 'text/event-stream',
       },
     },
