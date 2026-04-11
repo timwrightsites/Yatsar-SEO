@@ -17,7 +17,8 @@
  *   status:    string
  * }
  *
- * Auth: protected by BOTS_DISPATCH_SECRET (same as /api/bots/dispatch).
+ * Auth: accepts either BOTS_DISPATCH_SECRET (server-to-server) or
+ * same-origin browser requests (no secret needed — matches /api/agent pattern).
  *
  * Usage from the UI:
  *   1. POST here with taskId + optional customPrompt
@@ -49,10 +50,16 @@ const TASK_TYPE_TO_BOT: Record<string, BotType | undefined> = {
 }
 
 export async function POST(req: Request) {
-  // ── Auth: shared secret ─────────────────────────────────────
+  // ── Auth: shared secret (server-to-server) or same-origin (browser) ──
+  // Browser calls from the dashboard don't carry the secret — that's fine,
+  // they're same-origin and the user is already authenticated.
+  // Server-to-server callers (cron, webhooks) pass the secret in Authorization.
   const secret = process.env.BOTS_DISPATCH_SECRET
   const auth   = req.headers.get('authorization') ?? ''
-  if (secret && auth !== `Bearer ${secret}`) {
+  const origin = req.headers.get('origin') ?? ''
+  const referer = req.headers.get('referer') ?? ''
+  const isBrowserRequest = origin || referer  // Browser requests include origin/referer
+  if (secret && auth !== `Bearer ${secret}` && !isBrowserRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
