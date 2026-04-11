@@ -23,6 +23,7 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
   const [input, setInput] = useState('')
   const [agentId, setAgentId] = useState('seo-co-strategist')
   const [isStreaming, setIsStreaming] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -44,10 +45,15 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
     setMessages(prev => [...prev, { role: 'assistant', content: '' }])
 
     try {
-      const res = await fetch('/api/agent', {
+      const res = await fetch('/api/agent/managed', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, messages: nextMessages, agentId }),
+        body: JSON.stringify({
+          clientId,
+          messages: nextMessages,
+          agentId,
+          sessionId, // Continue existing session for multi-turn
+        }),
       })
 
       if (!res.ok || !res.body) {
@@ -70,6 +76,12 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
           if (line.startsWith('data: ') && line !== 'data: [DONE]') {
             try {
               const data = JSON.parse(line.slice(6))
+
+              // Capture sessionId for multi-turn
+              if (data.sessionId && !sessionId) {
+                setSessionId(data.sessionId)
+              }
+
               const chunk = data.choices?.[0]?.delta?.content || ''
               if (chunk) {
                 setMessages(prev => {
@@ -96,8 +108,7 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
       })
     } finally {
       setIsStreaming(false)
-      // Signal StrategyPanel (and any other listeners) to refresh —
-      // the agent may have included a :::strategy block that was saved server-side
+      // Signal StrategyPanel (and any other listeners) to refresh
       window.dispatchEvent(new CustomEvent('strategy-updated'))
     }
   }
@@ -109,6 +120,13 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
     }
   }
 
+  // Reset session when switching agents
+  const switchAgent = (newAgentId: string) => {
+    setAgentId(newAgentId)
+    setMessages([])
+    setSessionId(null)
+  }
+
   return (
     <div className="flex flex-col h-full min-h-[500px] bg-gray-950 rounded-xl border border-gray-800 overflow-hidden">
       {/* Header */}
@@ -116,13 +134,15 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-white">AI Agent</span>
           <span className={`w-2 h-2 rounded-full ${isStreaming ? 'bg-yellow-400 animate-pulse' : 'bg-emerald-400'}`} />
+          {sessionId && (
+            <span className="text-[9px] text-white/20 bg-white/5 px-1.5 py-0.5 rounded">
+              session active
+            </span>
+          )}
         </div>
         <select
           value={agentId}
-          onChange={e => {
-            setAgentId(e.target.value)
-            setMessages([])
-          }}
+          onChange={e => switchAgent(e.target.value)}
           disabled={isStreaming}
           className="text-xs bg-gray-800 text-gray-300 border border-gray-700 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
         >
@@ -145,6 +165,9 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
               {agentId === 'growth-director' && 'Keyword research, rank tracking, competitive analysis, and AEO opportunities.'}
               {agentId === 'audit-director' && 'Technical SEO health, Core Web Vitals, indexation, and crawlability issues.'}
               {agentId === 'content-director' && 'Content briefs, on-page optimization, internal linking, and content performance.'}
+            </p>
+            <p className="text-gray-700 text-[10px] mt-3">
+              Powered by Claude Managed Agents
             </p>
           </div>
         )}
