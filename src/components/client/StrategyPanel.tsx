@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Loader2, AlertCircle, Plus, ChevronDown, ChevronRight, ExternalLink, Flag, Calendar } from 'lucide-react'
+import { Loader2, AlertCircle, Plus, ChevronDown, ChevronRight, ExternalLink, Flag, Calendar, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AgentTriggerModal } from './AgentTriggerModal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -76,9 +77,10 @@ const PRIORITY_COLORS: Record<TaskPriority, string> = {
 
 // ── Task card ─────────────────────────────────────────────────────────────────
 
-function TaskCard({ task, onStatusChange }: {
+function TaskCard({ task, onStatusChange, onRunAgent }: {
   task: Task
   onStatusChange: (id: string, status: TaskStatus) => void
+  onRunAgent: (task: Task) => void
 }) {
   const [open, setOpen] = useState(false)
   const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'live'
@@ -139,6 +141,14 @@ function TaskCard({ task, onStatusChange }: {
               <ExternalLink size={10} /> View output
             </a>
           )}
+          {/* Run agent button */}
+          {(task.status === 'todo' || task.status === 'in_progress') && (
+            <button
+              onClick={() => onRunAgent(task)}
+              className="w-full mt-1 py-1.5 text-[10px] text-white/60 border border-white/8 rounded hover:bg-[#22c55e]/10 hover:border-[#22c55e]/20 hover:text-[#22c55e] transition-all flex items-center justify-center gap-1.5">
+              <Zap size={9} /> Run Agent
+            </button>
+          )}
           {/* Move forward button */}
           {nextStatus[task.status] && (
             <button
@@ -159,6 +169,7 @@ export function StrategyPanel({ clientId }: { clientId: string }) {
   const [strategies, setStrategies] = useState<Strategy[]>([])
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState<string | null>(null)
+  const [agentModalTask, setAgentModalTask] = useState<Task | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -266,7 +277,7 @@ export function StrategyPanel({ clientId }: { clientId: string }) {
 
               {/* Tasks */}
               {colTasks.map(task => (
-                <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} />
+                <TaskCard key={task.id} task={task} onStatusChange={updateTaskStatus} onRunAgent={setAgentModalTask} />
               ))}
 
               {colTasks.length === 0 && (
@@ -291,6 +302,31 @@ export function StrategyPanel({ clientId }: { clientId: string }) {
         })}
         <span className="text-white/20 text-[11px] ml-auto">{allTasks.length} total</span>
       </div>
+
+      {/* Agent trigger modal */}
+      {agentModalTask && (
+        <AgentTriggerModal
+          taskId={agentModalTask.id}
+          taskTitle={agentModalTask.title}
+          taskType={agentModalTask.type}
+          clientId={clientId}
+          onClose={() => setAgentModalTask(null)}
+          onSuccess={({ runId, sessionId }) => {
+            // Update the task status optimistically to in_progress
+            setStrategies(prev => prev.map(s => ({
+              ...s,
+              strategy_tasks: s.strategy_tasks.map(t =>
+                t.id === agentModalTask.id ? { ...t, status: 'in_progress' as TaskStatus } : t
+              ),
+            })))
+            setAgentModalTask(null)
+            // Emit event so other panels (BotActivity, ActivityFeed) can refresh
+            window.dispatchEvent(new CustomEvent('agent-dispatched', {
+              detail: { runId, sessionId, taskId: agentModalTask.id },
+            }))
+          }}
+        />
+      )}
     </div>
   )
 }

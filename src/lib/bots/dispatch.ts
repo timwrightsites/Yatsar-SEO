@@ -28,6 +28,7 @@ import { runTechnicalBot } from './technical'
 import { runContentBot }   from './content'
 import { runLinkBot }      from './link'
 import { dispatchGatewayAgent, isGatewayBotType } from './dispatch-gateway'
+import { dispatchManagedAgent } from '../agents/dispatch-managed'
 import type {
   BotExecutionResult,
   BotRunRecord,
@@ -37,6 +38,10 @@ import type {
   SupabaseClient,
   TriggerSource,
 } from './types'
+
+// Feature flag: set USE_MANAGED_AGENTS=true to route gateway-spawned agents
+// through Anthropic's Managed Agents API instead of the OpenClaw gateway.
+const USE_MANAGED_AGENTS = process.env.USE_MANAGED_AGENTS === 'true'
 
 const TASK_TYPE_TO_BOT: Record<string, BotType | undefined> = {
   // Inline bots (execute in the Vercel lambda)
@@ -123,11 +128,28 @@ export async function dispatchBotForTask({
 
   // ── 4b. Gateway routing fork ──────────────────────────────
   // Operational agents (analytics/audit/keyword/geo/optimizer/alerter/reporter)
-  // execute in the OpenClaw runtime, not inside this lambda. The gateway
-  // dispatcher opens the bot_runs row, fires the spawn request in the
-  // background via waitUntil, and returns immediately. The agent itself
-  // handles the final PATCH to bot_runs via direct PostgREST curl.
+  // execute outside this lambda. Route through either:
+  //   - Managed Agents API (Anthropic) — when USE_MANAGED_AGENTS=true
+  //   - OpenClaw gateway — legacy fallback
   if (isGatewayBotType(botType)) {
+    if (USE_MANAGED_AGENTS) {
+      const maResult = await dispatchManagedAgent({
+        supabase,
+        task,
+        client,
+        botType,
+        standingOrder,
+        triggerSource,
+      })
+      return {
+        ok:     maResult.ok,
+        runId:  maResult.runId,
+        status: maResult.status,
+        reason: maResult.reason,
+      }
+    }
+
+    // Legacy OpenClaw gateway path
     const gwResult = await dispatchGatewayAgent({
       supabase,
       task,
