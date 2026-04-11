@@ -20,7 +20,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -205,7 +205,7 @@ function extractSessionOutput(session: SessionStatus): Record<string, unknown> |
 }
 
 async function markRunCompleted(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   runId: string,
   status: 'succeeded' | 'failed',
   output: Record<string, unknown> | null,
