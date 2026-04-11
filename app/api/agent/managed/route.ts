@@ -208,6 +208,32 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // ── 4b. Create a bot_runs entry so this shows in Bot Runs tab ──
+  const chatStartedAt = new Date().toISOString()
+  let chatRunId: string | null = null
+  try {
+    const { data: runRow } = await supabase
+      .from('bot_runs')
+      .insert({
+        client_id:      clientId,
+        bot_type:       agentId,
+        status:         'running',
+        trigger_source: 'chat',
+        input: {
+          message: lastUserMessage.slice(0, 200),
+          agent_id: managedAgentId,
+          session_id: sessionId,
+          dispatched_via: 'chat',
+        },
+        started_at: chatStartedAt,
+      })
+      .select('id')
+      .single()
+    if (runRow) chatRunId = runRow.id
+  } catch {
+    // Non-fatal — chat still works even if bot_runs insert fails
+  }
+
   // ── 5. Open stream FIRST, then send message (per docs) ────
   // "Only events emitted after the stream is opened are delivered,
   //  so open the stream before sending events to avoid a race condition."
@@ -269,7 +295,7 @@ export async function POST(req: NextRequest) {
             controller.enqueue(encoder.encode('data: [DONE]\n\n'))
 
             // Post-stream processing (non-blocking)
-            processAfterStream(supabase, clientId, agentId, fullResponse).catch(err =>
+            processAfterStream(supabase, clientId, agentId, fullResponse, chatRunId, chatStartedAt).catch(err =>
               console.error('[agent/managed] Post-stream processing error:', err),
             )
 
@@ -277,6 +303,14 @@ export async function POST(req: NextRequest) {
             return
           } else if (event.type === 'session.status_terminated') {
             controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+            // Mark as failed if terminated unexpectedly
+            if (chatRunId) {
+              supabase.from('bot_runs').update({
+                status: 'failed',
+                error_message: 'Session terminated',
+                finished_at: new Date().toISOString(),
+              }).eq('id', chatRunId).then(() => {})
+            }
             controller.close()
             return
           }
@@ -296,7 +330,7 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${meta}\n\n`))
         controller.enqueue(encoder.encode('data: [DONE]\n\n'))
 
-        processAfterStream(supabase, clientId, agentId, fullResponse).catch(err =>
+        processAfterStream(supabase, clientId, agentId, fullResponse, chatRunId, chatStartedAt).catch(err =>
           console.error('[agent/managed] Post-stream processing error:', err),
         )
 
@@ -328,7 +362,37 @@ async function processAfterStream(
   clientId: string,
   agentId: string,
   fullResponse: string,
+  chatRunId: string | null,
+  startedAt: string,
 ): Promise<void> {
+  // Mark the bot_run as succeeded with a summary
+  if (chatRunId) {
+    const now = new Date().toISOString()
+    const durationMs = new Date(now).getTime() - new Date(startedAt).getTime()
+    // Build a short summary from the response
+    const summaryText = fullResponse
+      .replace(/\n🔧 \*Using .*?\*\n/g, '')  // strip tool indicators
+      .replace(/:::strategy[\s\S]*?:::/g, '') // strip strategy blocks
+      .replace(/:::memory[\s\S]*?:::/g, '')   // strip memory blocks
+      .trim()
+      .slice(0, 300)
+    const summary = summaryText.length > 0
+      ? (summaryText.length >= 300 ? summaryText + '…' : summaryText)
+      : 'Chat completed'
+
+    try {
+      await supabase.from('bot_runs').update({
+        status: 'succeeded',
+        summary,
+        output: { response_length: fullResponse.length, preview: summaryText.slice(0, 150) },
+        finished_at: now,
+        duration_ms: durationMs,
+      }).eq('id', chatRunId)
+    } catch (err) {
+      console.error('[agent/managed] Failed to update bot_run:', err)
+    }
+  }
+
   // Extract strategy and dispatch bots
   try {
     const newTaskIds = await extractAndSaveStrategy(supabase, clientId, agentId, fullResponse)
