@@ -50,6 +50,9 @@ const MANAGED_AGENT_IDS: Record<string, string> = {
 // Single shared environment — all agents use the same allowed hosts / secrets
 const MANAGED_ENV_ID = process.env.MANAGED_ENVIRONMENT_ID || ''
 
+// Credential vault — delivers Supabase OAuth to MCP servers inside the agent
+const MANAGED_VAULT_ID = process.env.MANAGED_VAULT_ID || ''
+
 // ── Anthropic client singleton ───────────────────────────────────────────
 let _client: Anthropic | null = null
 
@@ -165,10 +168,15 @@ export async function dispatchManagedAgent(
     const anthropic = getAnthropicClient()
 
     // Create session on the managed agent
-    const session = await (anthropic.beta as any).sessions.create({
+    const sessionConfig: Record<string, unknown> = {
       agent: agentId,
       environment_id: MANAGED_ENV_ID,
-    })
+    }
+    // Attach credential vault so the agent's MCP servers get Supabase OAuth
+    if (MANAGED_VAULT_ID) {
+      sessionConfig.vault_ids = [MANAGED_VAULT_ID]
+    }
+    const session = await (anthropic.beta as any).sessions.create(sessionConfig)
     sessionId = session.id
 
     // Send the task brief as a user message
