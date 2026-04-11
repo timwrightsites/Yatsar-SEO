@@ -1,8 +1,8 @@
 /**
  * POST /api/agent/managed
  *
- * Chat-style interface to Managed Agents. Replaces the OpenClaw
- * /v1/chat/completions proxy with Anthropic's Managed Agents API.
+ * Chat-style interface to Managed Agents using the Anthropic TypeScript SDK.
+ * The SDK handles all beta header negotiation automatically.
  *
  * Body: {
  *   clientId:   string
@@ -13,16 +13,18 @@
  *
  * Returns: SSE stream of agent text output.
  *
- * The route:
+ * Flow:
  *   1. Creates a new session (or reuses one for multi-turn)
- *   2. Builds a context-rich user message (Ahrefs data, strategy instructions)
- *   3. Sends it to the managed agent
- *   4. Streams agent events back as SSE (text deltas)
- *   5. Extracts :::strategy blocks from the full response and saves tasks
+ *   2. Builds a context-rich user message (Ahrefs data, memory, strategy instructions)
+ *   3. Opens the stream FIRST (per docs — avoid race condition)
+ *   4. Sends the user message
+ *   5. Streams agent events back as SSE (text deltas)
+ *   6. After completion, extracts :::strategy blocks and :::memory blocks
  */
 
 import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import Anthropic from '@anthropic-ai/sdk'
 import { buildAhrefsContext } from '@/lib/ahrefs-context'
 import { buildMemoryContext, writeMemory, extractMemoryFromOutput } from '@/lib/client-memory'
 import { dispatchBotForTask } from '@/lib/bots/dispatch'
@@ -31,7 +33,6 @@ export const runtime = 'nodejs'
 export const maxDuration = 300
 
 // ── Chat agent → Managed Agent ID mapping ─────────────────────────────────
-// Maps the chat dropdown agent keys to env-var-based Managed Agent IDs.
 const CHAT_AGENT_MAP: Record<string, string> = {
   'keyword':    process.env.MANAGED_AGENT_ID_KEYWORD    || '',
   'content':    process.env.MANAGED_AGENT_ID_CONTENT    || '',
@@ -48,7 +49,7 @@ const CHAT_AGENT_MAP: Record<string, string> = {
 const MANAGED_ENV_ID = process.env.MANAGED_ENVIRONMENT_ID || ''
 const MANAGED_VAULT_ID = process.env.MANAGED_VAULT_ID || ''
 
-// ── Strategy format instruction (same as original route) ──────────────────
+// ── Strategy format instruction ──────────────────────────────────────────
 const STRATEGY_SYSTEM_INSTRUCTION = `
 IMPORTANT: When you define, propose, or finalize a strategy for a client — including tasks,
 phases, or action items — you MUST include a structured block at the END of your response
@@ -134,11 +135,13 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // ── 2. Init Supabase ──────────────────────────────────────
+  // ── 2. Init Supabase + Anthropic SDK ──────────────────────
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   )
+
+  const anthropic = new Anthropic({ apiKey })
 
   // ── 3. Build context ──────────────────────────────────────
   let ahrefsContext = ''
@@ -166,7 +169,6 @@ export async function POST(req: NextRequest) {
     // Non-fatal
   }
 
-  // Build the user message with context
   const lastUserMessage = messages[messages.length - 1]?.content || ''
   const contextBlock = [
     memoryContext ? `\n\n${memoryContext}` : '',
@@ -174,212 +176,143 @@ export async function POST(req: NextRequest) {
     `\n\n<instructions>\n${STRATEGY_SYSTEM_INSTRUCTION}\n</instructions>`,
   ].join('')
 
-  // For multi-turn, only send the latest message (session has history)
-  // For first turn, include full context
   const userContent = sessionId
     ? lastUserMessage
     : `${lastUserMessage}${contextBlock}`
 
-  // ── 4. Create or reuse session ────────────────────────────
-  const headers: Record<string, string> = {
-    'x-api-key': apiKey,
-    'anthropic-version': '2023-06-01',
-    'anthropic-beta': 'managed-agents-2026-04-01',
-    'content-type': 'application/json',
-  }
-
+  // ── 4. Create or reuse session (via SDK) ──────────────────
   try {
     if (!sessionId) {
-      const sessionConfig: Record<string, unknown> = {
+      const sessionParams: Parameters<typeof anthropic.beta.sessions.create>[0] = {
         agent: managedAgentId,
         environment_id: MANAGED_ENV_ID,
       }
       if (MANAGED_VAULT_ID) {
-        sessionConfig.vault_ids = [MANAGED_VAULT_ID]
+        sessionParams.vault_ids = [MANAGED_VAULT_ID]
       }
-      console.log('[agent/managed] Creating session:', JSON.stringify(sessionConfig))
-      const createRes = await fetch('https://api.anthropic.com/v1/sessions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(sessionConfig),
-      })
-      if (!createRes.ok) {
-        const err = await createRes.text().catch(() => '')
-        console.error('[agent/managed] Session creation failed:', createRes.status, err)
-        return new Response(
-          JSON.stringify({ error: `Session creation failed (${createRes.status})`, detail: err.slice(0, 500) }),
-          { status: 502, headers: { 'Content-Type': 'application/json' } },
-        )
-      }
-      const session = await createRes.json()
+      console.log('[agent/managed] Creating session via SDK:', JSON.stringify({
+        agent: managedAgentId,
+        environment_id: MANAGED_ENV_ID,
+        vault_ids: MANAGED_VAULT_ID ? [MANAGED_VAULT_ID] : undefined,
+      }))
+      const session = await anthropic.beta.sessions.create(sessionParams)
       sessionId = session.id
+      console.log('[agent/managed] Session created:', sessionId)
     }
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err)
+    console.error('[agent/managed] Session creation failed:', errMsg)
     return new Response(
-      JSON.stringify({ error: 'Failed to create agent session', detail: err instanceof Error ? err.message : '' }),
+      JSON.stringify({ error: `Session creation failed`, detail: errMsg.slice(0, 500) }),
       { status: 502, headers: { 'Content-Type': 'application/json' } },
     )
   }
 
-  // ── 5. Send user message ──────────────────────────────────
+  // ── 5. Open stream FIRST, then send message (per docs) ────
+  // "Only events emitted after the stream is opened are delivered,
+  //  so open the stream before sending events to avoid a race condition."
+  let sdkStream: Awaited<ReturnType<typeof anthropic.beta.sessions.events.stream>>
   try {
-    const sendRes = await fetch(`https://api.anthropic.com/v1/sessions/${sessionId}/events`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        events: [{
-          type: 'user.message',
-          content: [{ type: 'text', text: userContent }],
-        }],
-      }),
-    })
-    if (!sendRes.ok) {
-      const err = await sendRes.text().catch(() => '')
-      return new Response(
-        JSON.stringify({ error: `Send failed: ${sendRes.status}`, detail: err.slice(0, 500) }),
-        { status: 502, headers: { 'Content-Type': 'application/json' } },
-      )
-    }
+    sdkStream = await anthropic.beta.sessions.events.stream(sessionId!)
+    console.log('[agent/managed] Stream opened for session:', sessionId)
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err)
+    console.error('[agent/managed] Stream open failed:', errMsg)
     return new Response(
-      JSON.stringify({ error: 'Failed to send message', detail: err instanceof Error ? err.message : '' }),
+      JSON.stringify({ error: `Stream failed`, detail: errMsg.slice(0, 500) }),
       { status: 502, headers: { 'Content-Type': 'application/json' } },
     )
   }
 
-  // ── 6. Stream response back ───────────────────────────────
-  const streamRes = await fetch(`https://api.anthropic.com/v1/sessions/${sessionId}/stream`, {
-    method: 'GET',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'managed-agents-2026-04-01',
-      'Accept': 'text/event-stream',
-    },
-  })
-
-  if (!streamRes.ok || !streamRes.body) {
-    const err = await streamRes.text().catch(() => '')
+  // ── 6. Send user message ──────────────────────────────────
+  try {
+    await anthropic.beta.sessions.events.send(sessionId!, {
+      events: [{
+        type: 'user.message',
+        content: [{ type: 'text', text: userContent }],
+      }],
+    })
+    console.log('[agent/managed] User message sent')
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err)
+    console.error('[agent/managed] Send failed:', errMsg)
     return new Response(
-      JSON.stringify({ error: `Stream failed: ${streamRes.status}`, detail: err.slice(0, 500) }),
+      JSON.stringify({ error: `Send failed`, detail: errMsg.slice(0, 500) }),
       { status: 502, headers: { 'Content-Type': 'application/json' } },
     )
   }
 
-  // Transform the Managed Agent SSE into OpenAI-compatible SSE format
-  // so the existing AgentPanel can parse it with minimal changes.
-  //
-  // Managed Agents event types (per docs):
-  //   agent.message  — text content from the agent (content[].text)
-  //   agent.tool_use — agent invoked a tool (name field)
-  //   session.status_idle — agent finished processing
+  // ── 7. Transform SDK stream → SSE for frontend ───────────
   let fullResponse = ''
-  let sseBuffer = '' // Buffer for partial SSE lines across chunks
+  const encoder = new TextEncoder()
+  const finalSessionId = sessionId
 
-  const transform = new TransformStream({
-    transform(chunk, controller) {
-      const text = new TextDecoder().decode(chunk)
-      sseBuffer += text
-
-      // Process complete lines only
-      const lines = sseBuffer.split('\n')
-      // Keep the last (potentially incomplete) line in the buffer
-      sseBuffer = lines.pop() ?? ''
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        const raw = line.slice(6).trim()
-        if (raw === '[DONE]') {
-          controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
-          continue
-        }
-
-        try {
-          const event = JSON.parse(raw)
+  const readable = new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const event of sdkStream) {
           let textChunk = ''
 
-          // agent.message — extract text from content blocks
-          if (event.type === 'agent.message' && Array.isArray(event.content)) {
+          if (event.type === 'agent.message') {
             for (const block of event.content) {
               if (block.type === 'text' && block.text) {
                 textChunk += block.text
               }
             }
-          }
-          // agent.tool_use — show tool usage indicator
-          else if (event.type === 'agent.tool_use') {
+          } else if (event.type === 'agent.tool_use') {
             const toolName = event.name || 'tool'
             textChunk = `\n🔧 *Using ${toolName}...*\n`
-          }
-          // session.status_idle — agent finished
-          else if (event.type === 'session.status_idle') {
-            controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
-            continue
-          }
-          // Legacy format fallback — content_block_delta (just in case)
-          else if (event.type === 'content_block_delta' && event.delta?.text) {
-            textChunk = event.delta.text
-          }
-          else if (event.type === 'content_block_start' && event.content_block?.text) {
-            textChunk = event.content_block.text
-          }
-          else if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
-            const toolName = event.content_block?.name || 'tool'
-            textChunk = `\n🔧 *Using ${toolName}...*\n`
+          } else if (event.type === 'session.status_idle') {
+            // Agent finished — flush final data and close
+            const meta = JSON.stringify({ sessionId: finalSessionId, done: true })
+            controller.enqueue(encoder.encode(`data: ${meta}\n\n`))
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+
+            // Post-stream processing (non-blocking)
+            processAfterStream(supabase, clientId, agentId, fullResponse).catch(err =>
+              console.error('[agent/managed] Post-stream processing error:', err),
+            )
+
+            controller.close()
+            return
+          } else if (event.type === 'session.status_terminated') {
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+            controller.close()
+            return
           }
 
           if (textChunk) {
             fullResponse += textChunk
             const sseData = JSON.stringify({
               choices: [{ delta: { content: textChunk } }],
-              sessionId,
+              sessionId: finalSessionId,
             })
-            controller.enqueue(new TextEncoder().encode(`data: ${sseData}\n\n`))
+            controller.enqueue(encoder.encode(`data: ${sseData}\n\n`))
           }
-        } catch {
-          // Skip unparseable lines
         }
-      }
-    },
-    async flush(controller) {
-      // Send sessionId so the frontend can continue the conversation
-      const meta = JSON.stringify({ sessionId, done: true })
-      controller.enqueue(new TextEncoder().encode(`data: ${meta}\n\n`))
-      controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
 
-      // ── 7. Extract strategy and dispatch bots ─────────────
-      try {
-        const newTaskIds = await extractAndSaveStrategy(supabase, clientId, agentId, fullResponse)
-        if (newTaskIds.length) {
-          console.log(`[agent/managed] Dispatching ${newTaskIds.length} bot(s) for new tasks`)
-          await Promise.allSettled(
-            newTaskIds.map(tid => dispatchBotForTask({ supabase, taskId: tid, triggerSource: 'task_created' })),
-          )
-        }
-      } catch (err) {
-        console.error('[agent/managed] Strategy extraction failed:', err)
-      }
+        // Stream ended without explicit idle event
+        const meta = JSON.stringify({ sessionId: finalSessionId, done: true })
+        controller.enqueue(encoder.encode(`data: ${meta}\n\n`))
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'))
 
-      // ── 8. Extract and save memory entries ─────────────────
-      try {
-        const memoryEntries = extractMemoryFromOutput({}, fullResponse)
-        if (memoryEntries.length > 0) {
-          await Promise.allSettled(
-            memoryEntries.map(entry =>
-              writeMemory(supabase, { ...entry, clientId, agent: entry.agent || agentId }),
-            ),
-          )
-          console.log(`[agent/managed] Saved ${memoryEntries.length} memory entries`)
-        }
+        processAfterStream(supabase, clientId, agentId, fullResponse).catch(err =>
+          console.error('[agent/managed] Post-stream processing error:', err),
+        )
+
+        controller.close()
       } catch (err) {
-        console.error('[agent/managed] Memory extraction failed:', err)
+        console.error('[agent/managed] Stream iteration error:', err)
+        const errMsg = err instanceof Error ? err.message : 'Stream error'
+        const errData = JSON.stringify({ error: errMsg })
+        controller.enqueue(encoder.encode(`data: ${errData}\n\n`))
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+        controller.close()
       }
     },
   })
 
-  const stream = streamRes.body.pipeThrough(transform)
-
-  return new Response(stream, {
+  return new Response(readable, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -388,7 +321,44 @@ export async function POST(req: NextRequest) {
   })
 }
 
-// ── Strategy extraction (copied from the original route) ─────────────────
+// ── Post-stream processing ──────────────────────────────────────────────
+
+async function processAfterStream(
+  supabase: any,
+  clientId: string,
+  agentId: string,
+  fullResponse: string,
+): Promise<void> {
+  // Extract strategy and dispatch bots
+  try {
+    const newTaskIds = await extractAndSaveStrategy(supabase, clientId, agentId, fullResponse)
+    if (newTaskIds.length) {
+      console.log(`[agent/managed] Dispatching ${newTaskIds.length} bot(s) for new tasks`)
+      await Promise.allSettled(
+        newTaskIds.map(tid => dispatchBotForTask({ supabase, taskId: tid, triggerSource: 'task_created' })),
+      )
+    }
+  } catch (err) {
+    console.error('[agent/managed] Strategy extraction failed:', err)
+  }
+
+  // Extract and save memory entries
+  try {
+    const memoryEntries = extractMemoryFromOutput({}, fullResponse)
+    if (memoryEntries.length > 0) {
+      await Promise.allSettled(
+        memoryEntries.map(entry =>
+          writeMemory(supabase, { ...entry, clientId, agent: entry.agent || agentId }),
+        ),
+      )
+      console.log(`[agent/managed] Saved ${memoryEntries.length} memory entries`)
+    }
+  } catch (err) {
+    console.error('[agent/managed] Memory extraction failed:', err)
+  }
+}
+
+// ── Strategy extraction ─────────────────────────────────────────────────
 
 async function extractAndSaveStrategy(
   supabase: any,
@@ -416,7 +386,6 @@ async function extractAndSaveStrategy(
   const validPriorities = ['high', 'medium', 'low']
 
   try {
-    // Resolve strategy: reuse existing or create
     let strategyId: string | null = null
 
     if (parsed.strategy_id) {

@@ -51,28 +51,38 @@ export async function GET(
     })
   }
 
-  // ── Stream from Managed Agent ──────────────────────────────
+  // ── Stream from Managed Agent (via SDK) ─────────────────────
   try {
-    const upstreamBody = await streamManagedSession(sessionId)
+    const sdkStream = await streamManagedSession(sessionId)
+    const encoder = new TextEncoder()
 
-    // Transform upstream SSE into our own format, adding some
-    // structure the UI can use to render a live activity feed
-    const transform = new TransformStream({
-      transform(chunk, controller) {
-        // Pass through the raw SSE from Anthropic's streaming endpoint.
-        // The UI-side EventSource parses the data: lines.
-        controller.enqueue(chunk)
-      },
-      flush(controller) {
-        // Send a final "done" event so the UI knows the stream ended
-        const encoder = new TextEncoder()
-        controller.enqueue(encoder.encode('data: {"type":"stream.done"}\n\n'))
+    // Convert SDK async iterable → ReadableStream SSE
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const event of sdkStream) {
+            const sseData = JSON.stringify(event)
+            controller.enqueue(encoder.encode(`data: ${sseData}\n\n`))
+
+            // Close on terminal events
+            if (event.type === 'session.status_idle' || event.type === 'session.status_terminated') {
+              controller.enqueue(encoder.encode('data: {"type":"stream.done"}\n\n'))
+              controller.close()
+              return
+            }
+          }
+          // Stream ended naturally
+          controller.enqueue(encoder.encode('data: {"type":"stream.done"}\n\n'))
+          controller.close()
+        } catch (err) {
+          console.error(`[agents/stream] Iteration error for ${sessionId}:`, err)
+          controller.enqueue(encoder.encode('data: {"type":"stream.done"}\n\n'))
+          controller.close()
+        }
       },
     })
 
-    const stream = upstreamBody.pipeThrough(transform)
-
-    return new Response(stream, {
+    return new Response(readable, {
       headers: {
         'Content-Type':  'text/event-stream',
         'Cache-Control': 'no-cache',

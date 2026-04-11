@@ -339,36 +339,14 @@ When finished, return a completion report in this exact format:
   return brief
 }
 
-// ── Stream helper — returns an async iterable of SSE events ──────────────
+// ── Stream helper — returns the SDK stream (async iterable) ─────────────
 
 export async function streamManagedSession(
   sessionId: string,
-): Promise<ReadableStream> {
+) {
   const anthropic = getAnthropicClient()
-
-  // The Managed Agents streaming endpoint returns SSE
-  const response = await fetch(
-    `https://api.anthropic.com/v1/sessions/${sessionId}/stream`,
-    {
-      method: 'GET',
-      headers: {
-        'x-api-key': process.env.ANTHROPIC_API_KEY!,
-        'anthropic-beta': 'managed-agents-2026-04-01',
-        'Accept': 'text/event-stream',
-      },
-    },
-  )
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(`Stream failed ${response.status}: ${body.slice(0, 400)}`)
-  }
-
-  if (!response.body) {
-    throw new Error('No response body from streaming endpoint')
-  }
-
-  return response.body
+  // The SDK handles all beta header negotiation automatically
+  return anthropic.beta.sessions.events.stream(sessionId)
 }
 
 // ── Failure helper ───────────────────────────────────────────────────────
