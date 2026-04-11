@@ -250,7 +250,8 @@ export function BotRunsPanel({ clientId }: BotRunsPanelProps) {
       const res = await fetch(`/api/agents/runs${params}`)
       if (!res.ok) throw new Error('Failed to load bot runs')
       const data = await res.json()
-      setRuns(data)
+      // Defensive: ensure data is always an array
+      setRuns(Array.isArray(data) ? data : [])
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')

@@ -44,6 +44,10 @@ export function AgentStatusPoller() {
     async function poll() {
       if (!active) return
       try {
+        // Side-effect: trigger server-side session completion check
+        // This catches managed agent runs that the agent didn't update itself
+        fetch('/api/agents/check-sessions').catch(() => {})
+
         const since = new Date(Date.now() - LOOKBACK_MS).toISOString()
         const res = await fetch(`/api/agents/status?since=${encodeURIComponent(since)}`)
         if (!res.ok) return
