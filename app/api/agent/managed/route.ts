@@ -184,7 +184,7 @@ export async function POST(req: NextRequest) {
   const headers: Record<string, string> = {
     'x-api-key': apiKey,
     'anthropic-version': '2023-06-01',
-    'anthropic-beta': 'agent-api-2026-03-01',
+    'anthropic-beta': 'managed-agents-2026-04-01',
     'content-type': 'application/json',
   }
 
@@ -253,7 +253,7 @@ export async function POST(req: NextRequest) {
     headers: {
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'agent-api-2026-03-01',
+      'anthropic-beta': 'managed-agents-2026-04-01',
       'Accept': 'text/event-stream',
     },
   })
@@ -267,17 +267,28 @@ export async function POST(req: NextRequest) {
   }
 
   // Transform the Managed Agent SSE into OpenAI-compatible SSE format
-  // so the existing AgentPanel can parse it with minimal changes
+  // so the existing AgentPanel can parse it with minimal changes.
+  //
+  // Managed Agents event types (per docs):
+  //   agent.message  — text content from the agent (content[].text)
+  //   agent.tool_use — agent invoked a tool (name field)
+  //   session.status_idle — agent finished processing
   let fullResponse = ''
+  let sseBuffer = '' // Buffer for partial SSE lines across chunks
 
   const transform = new TransformStream({
     transform(chunk, controller) {
       const text = new TextDecoder().decode(chunk)
+      sseBuffer += text
 
-      // Parse SSE events from the managed agent stream
-      for (const line of text.split('\n')) {
+      // Process complete lines only
+      const lines = sseBuffer.split('\n')
+      // Keep the last (potentially incomplete) line in the buffer
+      sseBuffer = lines.pop() ?? ''
+
+      for (const line of lines) {
         if (!line.startsWith('data: ')) continue
-        const raw = line.slice(6)
+        const raw = line.slice(6).trim()
         if (raw === '[DONE]') {
           controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
           continue
@@ -285,23 +296,33 @@ export async function POST(req: NextRequest) {
 
         try {
           const event = JSON.parse(raw)
-
-          // Extract text content from various event shapes
           let textChunk = ''
 
-          // Managed Agents text delta events
-          if (event.type === 'content_block_delta' && event.delta?.text) {
+          // agent.message — extract text from content blocks
+          if (event.type === 'agent.message' && Array.isArray(event.content)) {
+            for (const block of event.content) {
+              if (block.type === 'text' && block.text) {
+                textChunk += block.text
+              }
+            }
+          }
+          // agent.tool_use — show tool usage indicator
+          else if (event.type === 'agent.tool_use') {
+            const toolName = event.name || 'tool'
+            textChunk = `\n🔧 *Using ${toolName}...*\n`
+          }
+          // session.status_idle — agent finished
+          else if (event.type === 'session.status_idle') {
+            controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
+            continue
+          }
+          // Legacy format fallback — content_block_delta (just in case)
+          else if (event.type === 'content_block_delta' && event.delta?.text) {
             textChunk = event.delta.text
           }
-          // Full content block
           else if (event.type === 'content_block_start' && event.content_block?.text) {
             textChunk = event.content_block.text
           }
-          // Message delta with text
-          else if (event.type === 'message_delta' || event.type === 'message_start') {
-            // These don't typically contain text, skip
-          }
-          // Tool use events — emit as info
           else if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
             const toolName = event.content_block?.name || 'tool'
             textChunk = `\n🔧 *Using ${toolName}...*\n`
@@ -309,7 +330,6 @@ export async function POST(req: NextRequest) {
 
           if (textChunk) {
             fullResponse += textChunk
-            // Emit as OpenAI-compatible SSE
             const sseData = JSON.stringify({
               choices: [{ delta: { content: textChunk } }],
               sessionId,
