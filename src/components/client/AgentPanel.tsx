@@ -76,7 +76,12 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
       })
 
       if (!res.ok || !res.body) {
-        throw new Error('Agent request failed')
+        let detail = `Status ${res.status}`
+        try {
+          const errBody = await res.json()
+          detail = errBody.error || errBody.detail || detail
+        } catch {}
+        throw new Error(detail)
       }
 
       const reader = res.body.getReader()
@@ -116,12 +121,13 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
           }
         }
       }
-    } catch {
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Unknown error'
       setMessages(prev => {
         const updated = [...prev]
         updated[updated.length - 1] = {
           role: 'assistant',
-          content: 'Something went wrong. Please try again.',
+          content: `Agent error: ${errMsg}`,
         }
         return updated
       })

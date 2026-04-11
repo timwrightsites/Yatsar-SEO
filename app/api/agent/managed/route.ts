@@ -41,6 +41,7 @@ const CHAT_AGENT_MAP: Record<string, string> = {
 }
 
 const MANAGED_ENV_ID = process.env.MANAGED_ENVIRONMENT_ID || ''
+const MANAGED_VAULT_ID = process.env.MANAGED_VAULT_ID || ''
 
 // ── Strategy format instruction (same as original route) ──────────────────
 const STRATEGY_SYSTEM_INSTRUCTION = `
@@ -175,13 +176,17 @@ export async function POST(req: NextRequest) {
 
   try {
     if (!sessionId) {
+      const sessionConfig: Record<string, unknown> = {
+        agent: managedAgentId,
+        environment_id: MANAGED_ENV_ID,
+      }
+      if (MANAGED_VAULT_ID) {
+        sessionConfig.vault_ids = [MANAGED_VAULT_ID]
+      }
       const createRes = await fetch('https://api.anthropic.com/v1/sessions', {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          agent: managedAgentId,
-          environment_id: MANAGED_ENV_ID,
-        }),
+        body: JSON.stringify(sessionConfig),
       })
       if (!createRes.ok) {
         const err = await createRes.text().catch(() => '')
