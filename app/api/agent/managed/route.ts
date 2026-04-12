@@ -212,7 +212,7 @@ export async function POST(req: NextRequest) {
   const chatStartedAt = new Date().toISOString()
   let chatRunId: string | null = null
   try {
-    const { data: runRow } = await supabase
+    const { data: runRow, error: runErr } = await supabase
       .from('bot_runs')
       .insert({
         client_id:      clientId,
@@ -229,8 +229,15 @@ export async function POST(req: NextRequest) {
       })
       .select('id')
       .single()
-    if (runRow) chatRunId = runRow.id
-  } catch {
+    if (runErr) {
+      console.error('[agent/managed] bot_runs insert failed:', runErr.message, runErr.details)
+    }
+    if (runRow) {
+      chatRunId = runRow.id
+      console.log('[agent/managed] bot_run created:', chatRunId)
+    }
+  } catch (err) {
+    console.error('[agent/managed] bot_runs insert exception:', err)
     // Non-fatal — chat still works even if bot_runs insert fails
   }
 
@@ -383,8 +390,7 @@ async function processAfterStream(
     try {
       await supabase.from('bot_runs').update({
         status: 'succeeded',
-        summary,
-        output: { response_length: fullResponse.length, preview: summaryText.slice(0, 150) },
+        output: { summary, response_length: fullResponse.length, preview: summaryText.slice(0, 150) },
         finished_at: now,
         duration_ms: durationMs,
       }).eq('id', chatRunId)
