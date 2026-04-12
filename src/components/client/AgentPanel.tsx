@@ -13,6 +13,7 @@ interface AgentPanelProps {
 }
 
 const AGENTS = [
+  { id: 'director',  label: 'Director' },
   { id: 'keyword',   label: 'Keyword Agent' },
   { id: 'content',   label: 'Content Writer' },
   { id: 'link',      label: 'Link Builder' },
@@ -28,7 +29,7 @@ const AGENTS = [
 export default function AgentPanel({ clientId }: AgentPanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [agentId, setAgentId] = useState('keyword')
+  const [agentId, setAgentId] = useState('director')
   const [isStreaming, setIsStreaming] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [followUpApplied, setFollowUpApplied] = useState(false)
@@ -193,6 +194,7 @@ export default function AgentPanel({ clientId }: AgentPanelProps) {
               {AGENTS.find(a => a.id === agentId)?.label}
             </p>
             <p className="text-gray-600 text-xs mt-1 max-w-xs">
+              {agentId === 'director' && 'Your SEO strategist. Plan campaigns, ask questions, get recommendations — and the Director will create tasks for the specialist agents to execute.'}
               {agentId === 'keyword' && 'Keyword research, gap analysis, competitive targets, and opportunity scoring.'}
               {agentId === 'content' && 'Content briefs, article drafts, on-page optimization, and content strategy.'}
               {agentId === 'link' && 'Link prospecting, outreach drafts, backlink opportunities, and competitor analysis.'}

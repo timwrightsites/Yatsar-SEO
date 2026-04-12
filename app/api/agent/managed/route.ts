@@ -34,6 +34,7 @@ export const maxDuration = 300
 
 // ── Chat agent → Managed Agent ID mapping ─────────────────────────────────
 const CHAT_AGENT_MAP: Record<string, string> = {
+  'director':   process.env.MANAGED_AGENT_ID_DIRECTOR   || '',
   'keyword':    process.env.MANAGED_AGENT_ID_KEYWORD    || '',
   'content':    process.env.MANAGED_AGENT_ID_CONTENT    || '',
   'link':       process.env.MANAGED_AGENT_ID_LINK       || '',

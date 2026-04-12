@@ -50,12 +50,13 @@ const STATUS_PILL: Record<string, { bg: string; text: string; label: string }> =
 }
 
 const BOT_LABELS: Record<string, string> = {
-  content: 'Writer', link: 'Link', technical: 'Technical',
+  director: 'Director', content: 'Writer', link: 'Link', technical: 'Technical',
   keyword: 'Keyword', analytics: 'Analytics', audit: 'Crawler',
   geo: 'GEO', optimizer: 'Optimizer', alerter: 'Alerter', reporter: 'Reporter',
 }
 
 const BOT_COLORS: Record<string, string> = {
+  director: 'bg-white/20 text-white',
   content: 'bg-yellow-500/15 text-yellow-300',
   link: 'bg-blue-500/15 text-blue-300',
   technical: 'bg-green-500/15 text-green-300',
@@ -135,6 +136,7 @@ function OutputViewer({ runId }: { runId: string }) {
 
 // Map bot_type to the chat agent ID (now 1:1 since all agents are in the dropdown)
 const BOT_TO_AGENT: Record<string, string> = {
+  director: 'director',
   content: 'content',
   keyword: 'keyword',
   link: 'link',

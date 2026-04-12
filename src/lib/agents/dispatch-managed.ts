@@ -36,6 +36,7 @@ import type {
 // Override per bot_type via env vars (e.g. MANAGED_AGENT_ID_ANALYTICS=xxx).
 // Placeholder defaults match the naming convention from the prompts doc.
 const MANAGED_AGENT_IDS: Record<string, string> = {
+  director:  process.env.MANAGED_AGENT_ID_DIRECTOR  || 'director-agent',
   analytics: process.env.MANAGED_AGENT_ID_ANALYTICS || 'analytics-agent',
   audit:     process.env.MANAGED_AGENT_ID_AUDIT     || 'crawler-agent',
   keyword:   process.env.MANAGED_AGENT_ID_KEYWORD   || 'keyword-agent',
