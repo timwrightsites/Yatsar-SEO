@@ -297,16 +297,20 @@ export async function POST(req: NextRequest) {
             const toolName = event.name || 'tool'
             textChunk = `\n🔧 *Using ${toolName}...*\n`
           } else if (event.type === 'session.status_idle') {
-            // Agent finished — flush final data and close
+            // Agent finished — do post-processing BEFORE closing the stream
+            // (Vercel kills the function context after response closes, so we must
+            //  finish all DB writes while the stream is still open)
+            console.log('[agent/managed] Session idle — running post-stream processing before close')
+            try {
+              await processAfterStream(supabase, clientId, agentId, fullResponse, chatRunId, chatStartedAt)
+              console.log('[agent/managed] Post-stream processing complete')
+            } catch (err) {
+              console.error('[agent/managed] Post-stream processing error:', err)
+            }
+
             const meta = JSON.stringify({ sessionId: finalSessionId, done: true })
             controller.enqueue(encoder.encode(`data: ${meta}\n\n`))
             controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-
-            // Post-stream processing (non-blocking)
-            processAfterStream(supabase, clientId, agentId, fullResponse, chatRunId, chatStartedAt).catch(err =>
-              console.error('[agent/managed] Post-stream processing error:', err),
-            )
-
             controller.close()
             return
           } else if (event.type === 'session.status_terminated') {
@@ -333,15 +337,18 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Stream ended without explicit idle event
+        // Stream ended without explicit idle event — process before closing
+        console.log('[agent/managed] Stream ended (no idle event) — running post-stream processing')
+        try {
+          await processAfterStream(supabase, clientId, agentId, fullResponse, chatRunId, chatStartedAt)
+          console.log('[agent/managed] Post-stream processing complete (fallback path)')
+        } catch (err) {
+          console.error('[agent/managed] Post-stream processing error:', err)
+        }
+
         const meta = JSON.stringify({ sessionId: finalSessionId, done: true })
         controller.enqueue(encoder.encode(`data: ${meta}\n\n`))
         controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-
-        processAfterStream(supabase, clientId, agentId, fullResponse, chatRunId, chatStartedAt).catch(err =>
-          console.error('[agent/managed] Post-stream processing error:', err),
-        )
-
         controller.close()
       } catch (err) {
         console.error('[agent/managed] Stream iteration error:', err)
@@ -437,18 +444,66 @@ async function extractAndSaveStrategy(
   agentId: string,
   responseText: string,
 ): Promise<string[]> {
-  const match = responseText.match(/:::strategy\s*\n([\s\S]*?)\n:::/)
-  if (!match) return []
+  // Robust extraction — handles extra whitespace, markdown fences, varied formatting
+  // Try multiple patterns from strict to loose
+  let jsonStr: string | null = null
 
-  let parsed: any
-  try {
-    parsed = JSON.parse(match[1])
-  } catch {
-    console.warn('[agent/managed] Invalid :::strategy JSON')
+  // Pattern 1: strict :::strategy\n...\n:::
+  const m1 = responseText.match(/:::strategy\s*\n([\s\S]*?)\n:::/)
+  if (m1) jsonStr = m1[1]
+
+  // Pattern 2: :::strategy with possible code fences inside
+  if (!jsonStr) {
+    const m2 = responseText.match(/:::strategy\s*\n?\s*```(?:json)?\s*\n?([\s\S]*?)\n?\s*```\s*\n?:::/)
+    if (m2) jsonStr = m2[1]
+  }
+
+  // Pattern 3: very loose — just find :::strategy and the next :::
+  if (!jsonStr) {
+    const m3 = responseText.match(/:::strategy\s*([\s\S]*?):::/)
+    if (m3) jsonStr = m3[1].trim()
+  }
+
+  // Pattern 4: look for a JSON block with "tasks" array even without ::: markers
+  if (!jsonStr) {
+    const m4 = responseText.match(/\{[\s\S]*?"tasks"\s*:\s*\[[\s\S]*?\]\s*\}/)
+    if (m4) {
+      // Only use this if it looks like a strategy block (has "name" and "tasks")
+      try {
+        const candidate = JSON.parse(m4[0])
+        if (candidate.name && candidate.tasks) jsonStr = m4[0]
+      } catch { /* not valid JSON, skip */ }
+    }
+  }
+
+  if (!jsonStr) {
+    console.log('[agent/managed] No :::strategy block found in response. Response length:', responseText.length)
+    console.log('[agent/managed] Response tail (last 500 chars):', responseText.slice(-500))
     return []
   }
 
-  if (!parsed.name) return []
+  // Clean up the JSON string — remove markdown artifacts
+  jsonStr = jsonStr
+    .replace(/^```(?:json)?\s*\n?/, '')  // leading code fence
+    .replace(/\n?\s*```$/, '')            // trailing code fence
+    .trim()
+
+  console.log('[agent/managed] Extracted strategy JSON (first 300 chars):', jsonStr.slice(0, 300))
+
+  let parsed: any
+  try {
+    parsed = JSON.parse(jsonStr)
+  } catch (e) {
+    console.warn('[agent/managed] Invalid :::strategy JSON:', (e as Error).message)
+    console.warn('[agent/managed] Raw JSON string (first 500 chars):', jsonStr.slice(0, 500))
+    return []
+  }
+
+  if (!parsed.name) {
+    console.warn('[agent/managed] Strategy block has no "name" field. Keys:', Object.keys(parsed))
+    return []
+  }
+  console.log(`[agent/managed] Strategy parsed: "${parsed.name}" with ${parsed.tasks?.length || 0} tasks`)
 
   const validTypes = [
     'content', 'technical', 'link', 'meta', 'other',
@@ -484,8 +539,14 @@ async function extractAndSaveStrategy(
       const { data, error } = await supabase.from('strategies')
         .insert({ client_id: clientId, name: parsed.name, description: parsed.description || null })
         .select('id').single()
-      if (error || !data) return []
+      if (error || !data) {
+        console.error('[agent/managed] Strategy insert failed:', error?.message, error?.details)
+        return []
+      }
       strategyId = data.id
+      console.log('[agent/managed] Created new strategy:', strategyId)
+    } else {
+      console.log('[agent/managed] Using existing strategy:', strategyId)
     }
 
     if (parsed.tasks?.length) {
@@ -509,9 +570,15 @@ async function extractAndSaveStrategy(
         }
       })
 
+      console.log(`[agent/managed] Inserting ${taskRows.length} tasks for strategy ${strategyId}`)
       const { data: inserted, error } = await supabase
         .from('strategy_tasks').insert(taskRows).select('id')
-      if (error) { console.error('[agent/managed] Task insert failed:', error); return [] }
+      if (error) {
+        console.error('[agent/managed] Task insert failed:', error.message, error.details, error.hint)
+        console.error('[agent/managed] First task row:', JSON.stringify(taskRows[0]))
+        return []
+      }
+      console.log(`[agent/managed] Successfully inserted ${inserted?.length || 0} tasks`)
       return (inserted ?? []).map((t: { id: string }) => t.id)
     }
 
