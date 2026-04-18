@@ -42,7 +42,7 @@ const statusBadge: Record<string, { label: string; className: string }> = {
 }
 
 export function ClientCard({ client, lastActivity, lastActivityStatus }: ClientCardProps) {
-  const badge = statusBadge[client.status] ?? statusBadge.active
+  const badge = statusBadge[client.status ?? 'active'] ?? statusBadge.active
 
   return (
     <div className="bg-[#141414] border border-white/8 rounded-lg p-4 flex flex-col gap-4">

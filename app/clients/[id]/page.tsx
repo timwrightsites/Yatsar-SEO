@@ -153,7 +153,7 @@ export default async function ClientPage({ params, searchParams }: Props) {
           <ArchiveButton
             clientId={client.id}
             clientName={client.name}
-            currentStatus={client.status}
+            currentStatus={client.status ?? 'active'}
           />
         </div>
       </div>
