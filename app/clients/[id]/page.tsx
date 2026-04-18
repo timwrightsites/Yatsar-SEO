@@ -17,6 +17,7 @@ import { ArchiveButton } from '@/components/client/ArchiveButton'
 import { ClientTabs, isTabKey, type TabKey } from '@/components/client/ClientTabs'
 import AgentPanel from '@/components/client/AgentPanel'
 import { BotRunsPanel } from '@/components/client/BotRunsPanel'
+import { DeliverablesPanel } from '@/components/client/DeliverablesPanel'
 import { cn } from '@/lib/utils'
 import type { Client, ActivityLog } from '@/types/database'
 
@@ -172,6 +173,13 @@ export default async function ClientPage({ params, searchParams }: Props) {
               Add a domain to this client to load GEO visibility data.
             </div>
           )}
+        </div>
+      )}
+
+      {/* ─── DELIVERABLES TAB ─────────────────────────────────────── */}
+      {activeTab === 'deliverables' && (
+        <div className="mb-6">
+          <DeliverablesPanel clientId={client.id} />
         </div>
       )}
 
