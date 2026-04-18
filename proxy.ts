@@ -16,6 +16,15 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // Paperclip plugin bypass: the Paperclip plugin worker calls
+  // /api/plugins/paperclip/* with an `Authorization: Bearer <token>` header
+  // which the route handler validates against PAPERCLIP_PLUGIN_TOKEN. The
+  // plugin runs in a Paperclip host, not a browser, so it has no Supabase
+  // session cookie. Scope this bypass tightly to that one path prefix.
+  if (request.nextUrl.pathname.startsWith('/api/plugins/paperclip/')) {
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(

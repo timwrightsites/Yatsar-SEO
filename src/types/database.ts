@@ -28,6 +28,10 @@ export interface Client {
   ahrefs_project_id: string | null
   gsc_property: string | null
   pagespeed_url: string | null
+  // Human-readable Paperclip URL slug (e.g. "TRU" for Trustal Recruiting).
+  // Populated by the 001_paperclip_plugin.sql migration and consumed by
+  // the Paperclip plugin endpoint at /api/plugins/paperclip/client-metrics.
+  paperclip_company_prefix: string | null
 }
 
 export interface BotConfig {
