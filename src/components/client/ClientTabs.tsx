@@ -3,28 +3,20 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
   TrendingUp,
-  FileText,
-  Link2,
-  Target,
   MessageSquare,
   Sparkles,
   Zap,
-  Brain,
 } from 'lucide-react'
 
-export const TAB_KEYS = ['overview', 'seo', 'geo', 'content', 'links', 'strategy', 'runs', 'memory', 'chat'] as const
+export const TAB_KEYS = ['overview', 'seo', 'geo', 'runs', 'chat'] as const
 export type TabKey = (typeof TAB_KEYS)[number]
 
 const TABS: { key: TabKey; label: string; icon: typeof LayoutDashboard }[] = [
-  { key: 'overview', label: 'Overview',        icon: LayoutDashboard },
-  { key: 'seo',      label: 'SEO Data',        icon: TrendingUp      },
-  { key: 'geo',      label: 'GEO',             icon: Sparkles        },
-  { key: 'content',  label: 'Content Drafts',  icon: FileText        },
-  { key: 'links',    label: 'Link Prospects',  icon: Link2           },
-  { key: 'strategy', label: 'Strategy',        icon: Target          },
-  { key: 'runs',     label: 'Bot Runs',        icon: Zap             },
-  { key: 'memory',   label: 'Memory',          icon: Brain           },
-  { key: 'chat',     label: 'AI Chat',         icon: MessageSquare   },
+  { key: 'overview', label: 'Overview',  icon: LayoutDashboard },
+  { key: 'seo',      label: 'SEO Data',  icon: TrendingUp      },
+  { key: 'geo',      label: 'GEO',       icon: Sparkles        },
+  { key: 'runs',     label: 'Bot Runs',  icon: Zap             },
+  { key: 'chat',     label: 'AI Chat',   icon: MessageSquare   },
 ]
 
 export function isTabKey(value: string | undefined | null): value is TabKey {
@@ -32,24 +24,17 @@ export function isTabKey(value: string | undefined | null): value is TabKey {
 }
 
 interface Props {
-  clientId:        string
-  active:          TabKey
-  pendingDrafts:   number
-  newProspects:    number
+  clientId: string
+  active:   TabKey
 }
 
-export function ClientTabs({ clientId, active, pendingDrafts, newProspects }: Props) {
+export function ClientTabs({ clientId, active }: Props) {
   return (
     <div className="border-b border-white/8 mb-6 -mx-1 overflow-x-auto">
       <nav className="flex items-center gap-1 min-w-max">
         {TABS.map(({ key, label, icon: Icon }) => {
           const isActive = key === active
-          // Preserve the URL but always send users back to ?tab=<key>
           const href = `/clients/${clientId}?tab=${key}`
-          const badgeCount =
-            key === 'content' ? pendingDrafts :
-            key === 'links'   ? newProspects  :
-            0
 
           return (
             <Link
@@ -65,11 +50,6 @@ export function ClientTabs({ clientId, active, pendingDrafts, newProspects }: Pr
             >
               <Icon size={14} />
               {label}
-              {badgeCount > 0 && (
-                <span className="text-[10px] bg-yellow-500/15 text-yellow-400 border border-yellow-500/20 px-1.5 py-0.5 rounded-full font-medium leading-none">
-                  {badgeCount}
-                </span>
-              )}
             </Link>
           )
         })}
