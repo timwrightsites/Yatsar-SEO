@@ -31,6 +31,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase-service'
+import { resolveClient } from '@/lib/client-lookup'
 import {
   fetchOverview,
   AhrefsApiError,
@@ -40,13 +41,6 @@ import {
 // Always dynamic — we read a per-request bearer header.
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-
-interface ClientRow {
-  id: string
-  name: string
-  domain: string | null
-  paperclip_company_prefix: string | null
-}
 
 interface MetricsPayload {
   clientId: string
@@ -166,39 +160,12 @@ export async function GET(req: NextRequest) {
 
   const supabase = createServiceClient()
 
-  // Resolve the Yatsar client row.
-  let client: ClientRow | null = null
-  let lookupError: string | null = null
-
-  if (companyPrefix) {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('id, name, domain, paperclip_company_prefix')
-      .eq('paperclip_company_prefix', companyPrefix)
-      .maybeSingle()
-    if (error) lookupError = error.message
-    client = (data as ClientRow | null) ?? null
-  }
-
-  if (!client && clientId) {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('id, name, domain, paperclip_company_prefix')
-      .eq('id', clientId)
-      .maybeSingle()
-    if (error) lookupError = error.message
-    client = (data as ClientRow | null) ?? null
-  }
-
-  if (!client && companyId) {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('id, name, domain, paperclip_company_prefix')
-      .eq('id', companyId)
-      .maybeSingle()
-    if (error) lookupError = error.message
-    client = (data as ClientRow | null) ?? null
-  }
+  // Resolve the Yatsar client row via the shared helper.
+  const { client, lookupError } = await resolveClient(supabase, {
+    companyPrefix,
+    clientId,
+    companyId,
+  })
 
   if (!client) {
     return NextResponse.json(

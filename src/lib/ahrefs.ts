@@ -515,6 +515,189 @@ function normalizeSerpFeatures(v: unknown): string[] {
   return []
 }
 
+// ── Full backlinks list (used by Link Bot tool yatsar.seo:getBacklinks) ─────
+//
+// Returns the recent backlinks (individual link rows, NOT the aggregated
+// backlinks-stats metric that fetchOverview uses). This is what an agent
+// would pull when asked "show me the latest links for trustalrecruiting.com".
+// Sorted by first_seen descending so newer links come first.
+//
+// Cost: ~50 units per call. Standard-plan row cap applies (25 rows max).
+
+export interface AllBacklinksParams {
+  supabase:   SupabaseClient
+  clientId:   string
+  target:     string
+  limit?:     number
+  forceFresh?: boolean
+}
+
+const ALL_BACKLINKS_SELECT = [
+  'url_from',
+  'url_to',
+  'domain_rating_source',
+  'traffic_domain',
+  'anchor',
+  'is_dofollow',
+  'first_seen',
+  'last_seen',
+  'link_type',
+].join(',')
+
+export async function fetchAllBacklinks({
+  supabase, clientId, target, limit = STANDARD_ROW_CAP, forceFresh,
+}: AllBacklinksParams) {
+  return ahrefsGet({
+    supabase, clientId, forceFresh,
+    endpoint: 'site-explorer/all-backlinks',
+    params: {
+      target:    normalizeTarget(target),
+      date:      weekBucketISO(),
+      mode:      'subdomains',
+      aggregation: 'similar_links',
+      select:    ALL_BACKLINKS_SELECT,
+      order_by:  'first_seen:desc',
+      limit:     Math.min(limit, STANDARD_ROW_CAP),
+    },
+  })
+}
+
+// ── Site Audit (used by Technical SEO tool yatsar.seo:getSiteAudit) ─────────
+//
+// Ahrefs site-audit endpoints are keyed by project_id (Ahrefs internal
+// numeric ID), not by target URL. So we call site-audit/projects first to
+// find the project whose URL matches the target, then call
+// site-audit/issues with its id. Both calls are cached.
+//
+// If no project matches the domain, returns { project: null, issues: [] }
+// so the tool can surface a friendly "no audit set up" message.
+
+export interface SiteAuditIssuesParams {
+  supabase:   SupabaseClient
+  clientId:   string
+  target:     string
+  forceFresh?: boolean
+}
+
+export interface SiteAuditIssueRow {
+  name:         string
+  category:     string
+  severity:     string   // error / warning / notice (varies)
+  pages_count:  number
+}
+
+export interface SiteAuditIssuesReport {
+  project:  { id: string; url: string; name: string } | null
+  issues:   SiteAuditIssueRow[]
+  fetched_at: string
+}
+
+function pickString(obj: unknown, keys: string[]): string {
+  if (!obj || typeof obj !== 'object') return ''
+  const rec = obj as Record<string, unknown>
+  for (const k of keys) {
+    const v = rec[k]
+    if (typeof v === 'string' && v.length > 0) return v
+  }
+  return ''
+}
+
+function pickNumber(obj: unknown, keys: string[]): number {
+  if (!obj || typeof obj !== 'object') return 0
+  const rec = obj as Record<string, unknown>
+  for (const k of keys) {
+    const v = rec[k]
+    if (typeof v === 'number' && Number.isFinite(v)) return v
+    if (typeof v === 'string' && v !== '') {
+      const n = Number(v)
+      if (Number.isFinite(n)) return n
+    }
+  }
+  return 0
+}
+
+function projectUrlMatchesTarget(projectUrl: string, target: string): boolean {
+  const p = projectUrl.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase()
+  const t = target.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase()
+  if (!p || !t) return false
+  // Match exact or "www." variant either direction.
+  if (p === t) return true
+  if (p === `www.${t}` || `www.${p}` === t) return true
+  return false
+}
+
+export async function fetchSiteAuditIssues({
+  supabase, clientId, target, forceFresh,
+}: SiteAuditIssuesParams): Promise<SiteAuditIssuesReport> {
+  const projectsRaw = await ahrefsGet({
+    supabase, clientId, forceFresh,
+    endpoint: 'site-audit/projects',
+    params:   {},
+  }) as unknown
+
+  // Ahrefs wraps the list as { projects: [...] } in current API; some
+  // envelopes use `data`. Handle either.
+  const projectsArr: Array<Record<string, unknown>> = (() => {
+    if (!projectsRaw || typeof projectsRaw !== 'object') return []
+    const env = projectsRaw as { projects?: unknown; data?: unknown }
+    if (Array.isArray(env.projects)) return env.projects as Array<Record<string, unknown>>
+    if (Array.isArray(env.data))     return env.data as Array<Record<string, unknown>>
+    return []
+  })()
+
+  const matched = projectsArr.find((row) => {
+    const url = pickString(row, ['url', 'target', 'domain', 'site'])
+    return projectUrlMatchesTarget(url, target)
+  })
+
+  if (!matched) {
+    return {
+      project: null,
+      issues: [],
+      fetched_at: new Date().toISOString(),
+    }
+  }
+
+  const projectId = pickString(matched, ['id', 'project_id'])
+  const projectUrl = pickString(matched, ['url', 'target', 'domain', 'site'])
+  const projectName = pickString(matched, ['name', 'title']) || projectUrl
+
+  if (!projectId) {
+    return {
+      project: null,
+      issues: [],
+      fetched_at: new Date().toISOString(),
+    }
+  }
+
+  const issuesRaw = await ahrefsGet({
+    supabase, clientId, forceFresh,
+    endpoint: 'site-audit/issues',
+    params:   { project_id: projectId },
+  }) as unknown
+
+  const issuesArr: Array<Record<string, unknown>> = (() => {
+    if (!issuesRaw || typeof issuesRaw !== 'object') return []
+    const env = issuesRaw as { issues?: unknown; data?: unknown }
+    if (Array.isArray(env.issues)) return env.issues as Array<Record<string, unknown>>
+    if (Array.isArray(env.data))   return env.data as Array<Record<string, unknown>>
+    return []
+  })()
+
+  const issues: SiteAuditIssueRow[] = issuesArr.map((r) => ({
+    name:        pickString(r, ['name', 'issue', 'check', 'title']),
+    category:    pickString(r, ['category', 'group', 'type']),
+    severity:    pickString(r, ['severity', 'priority', 'level']),
+    pages_count: pickNumber(r, ['pages_count', 'pages', 'count', 'urls_count']),
+  }))
+
+  return {
+    project: { id: projectId, url: projectUrl, name: projectName },
+    issues,
+    fetched_at: new Date().toISOString(),
+  }
+}
+
 export async function fetchGeoVisibility({
   supabase, clientId, target, country, limit = 50, forceFresh,
 }: GeoVisibilityParams): Promise<GeoVisibilityReport> {
