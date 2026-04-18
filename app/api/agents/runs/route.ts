@@ -22,7 +22,7 @@ export async function GET(req: Request) {
 
   let query = supabase
     .from('bot_runs')
-    .select('id, bot_type, status, client_id, task_id, started_at, finished_at, duration_ms, error_message, output, trigger_source, input')
+    .select('id, bot_type, status, client_id, task_id, started_at, finished_at, duration_ms, error_message, output, trigger_source')
     .order('started_at', { ascending: false })
     .limit(limit)
 
@@ -69,7 +69,7 @@ export async function GET(req: Request) {
       client_name: client?.name ?? null,
       client_domain: client?.domain ?? null,
       task_id: run.task_id,
-      task_title: (task as any)?.title ?? (run.input as any)?.task_title ?? null,
+      task_title: (task as any)?.title ?? null,
       task_type: (task as any)?.type ?? null,
       started_at: run.started_at,
       finished_at: run.finished_at,

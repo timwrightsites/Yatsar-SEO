@@ -48,10 +48,13 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured' }, { status: 500 })
   }
 
-  // Find all running bot_runs that were dispatched via managed_agents
+  // Find all running bot_runs. (bot_runs no longer has an `input` column in
+  // the new schema, so managed-agent session tracking is effectively disabled
+  // here. Endpoint becomes a safe no-op until we migrate managed-agent state
+  // onto a dedicated column.)
   const { data: runningRuns, error: queryErr } = await supabase
     .from('bot_runs')
-    .select('id, bot_type, client_id, task_id, input, started_at')
+    .select('id, bot_type, client_id, task_id, started_at')
     .eq('status', 'running')
     .order('started_at', { ascending: true })
     .limit(20)
@@ -60,13 +63,11 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: queryErr.message }, { status: 500 })
   }
 
-  // Filter to only managed agent runs that have a session_id
-  const managedRuns = (runningRuns ?? []).filter(
-    (r) => {
-      const input = r.input as Record<string, unknown> | null
-      return input?.dispatched_via === 'managed_agents' && input?.session_id
-    }
-  )
+  // Managed-agent runs used to be identified via the now-dropped `input` JSON
+  // column. Until a replacement is in place, treat all running rows as
+  // non-managed so nothing gets mis-checked.
+  const managedRuns: Array<{ id: string; started_at: string | null; input?: Record<string, unknown> }> = []
+  void runningRuns
 
   if (managedRuns.length === 0) {
     return NextResponse.json({ checked: 0, updated: 0, message: 'No running managed agent sessions' })
@@ -115,7 +116,7 @@ export async function GET(req: Request) {
 
       if (session.status === 'active') {
         // Still running — check if it's been running too long (>12 min)
-        const elapsed = Date.now() - new Date(run.started_at).getTime()
+        const elapsed = Date.now() - new Date(run.started_at ?? 0).getTime()
         results.push({
           runId: run.id,
           sessionId,
