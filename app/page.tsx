@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/supabase-server'
-import { DashboardShell } from '@/components/dashboard/DashboardShell'
+import { ProjectsShell } from '@/components/projects/ProjectsShell'
+import { buildProjectsRollup } from '@/lib/projects'
 import type { Client, ActivityLog } from '@/types/database'
+
+export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -12,15 +15,23 @@ export default async function DashboardPage() {
     db.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(20) as Promise<{ data: ActivityLog[] | null }>,
   ])
 
-  const activeClients = (clients ?? []).filter((c: Client) => c.status === 'active')
+  const allClients = (clients ?? [])
+
+  // Header MRR sums across _active_ clients only — archived shouldn't
+  // inflate monthly numbers.
+  const activeClients = allClients.filter((c: Client) => c.status === 'active')
   const totalMRR = activeClients.reduce((sum: number, c: Client) => sum + (c.monthly_retainer ?? 0), 0)
   const mrrDisplay = totalMRR >= 1000
     ? `$${(totalMRR / 1000).toFixed(1)}K MRR`
     : `$${totalMRR} MRR`
 
+  // Roll up project-level stats (task counts, review queue, last activity)
+  // once on the server so the grid doesn't have to re-aggregate per tile.
+  const projects = await buildProjectsRollup(db, allClients)
+
   return (
-    <DashboardShell
-      clients={clients ?? []}
+    <ProjectsShell
+      projects={projects}
       logs={(logs ?? []) as ActivityLog[]}
       mrrDisplay={mrrDisplay}
     />
