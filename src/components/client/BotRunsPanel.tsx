@@ -27,6 +27,8 @@ interface BotRun {
   summary: string
   trigger_source: string
   has_output: boolean
+  issue_id: string | null
+  agent_name: string | null
 }
 
 // ── Status config (Monday-style colored pills) ────────────────────────────────
@@ -87,8 +89,19 @@ function formatDuration(ms: number | null): string {
 
 // ── Expanded output viewer ─────────────────────────────────────────────────────
 
+interface RunDetail {
+  output: Record<string, unknown> | null
+  agent_run: {
+    id: string
+    agent: string | null
+    issue_id: string | null
+    output_summary: string | null
+    output: string | null
+  } | null
+}
+
 function OutputViewer({ runId }: { runId: string }) {
-  const [output, setOutput] = useState<Record<string, unknown> | null>(null)
+  const [detail, setDetail] = useState<RunDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -98,7 +111,7 @@ function OutputViewer({ runId }: { runId: string }) {
         const res = await fetch(`/api/agents/runs/${runId}`)
         if (!res.ok) throw new Error('Failed to load')
         const data = await res.json()
-        setOutput(data.output)
+        setDetail({ output: data.output ?? null, agent_run: data.agent_run ?? null })
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load output')
       } finally {
@@ -119,15 +132,69 @@ function OutputViewer({ runId }: { runId: string }) {
     return <div className="px-4 py-4 text-red-400/60 text-xs">{error}</div>
   }
 
-  if (!output) {
-    return <div className="px-4 py-4 text-white/20 text-xs">No output data recorded for this run.</div>
+  const summary = detail?.agent_run?.output_summary?.trim() ?? ''
+  const agentOutputText = detail?.agent_run?.output?.trim() ?? ''
+  const rawOutput = detail?.output ?? null
+  const issueId = detail?.agent_run?.issue_id ?? null
+  const agentName = detail?.agent_run?.agent ?? null
+
+  if (!summary && !agentOutputText && !rawOutput) {
+    return <div className="px-4 py-4 text-white/20 text-xs">No output recorded for this run.</div>
   }
 
   return (
-    <div className="px-4 py-4">
-      <pre className="bg-black/40 border border-white/5 rounded-lg p-4 text-xs text-white/60 overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap font-mono leading-relaxed">
-        {JSON.stringify(output, null, 2)}
-      </pre>
+    <div className="px-4 py-4 space-y-3">
+      {/* Issue / agent header */}
+      {(issueId || agentName) && (
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider">
+          {agentName && (
+            <span className="bg-white/5 border border-white/10 text-white/50 px-2 py-0.5 rounded">
+              {agentName}
+            </span>
+          )}
+          {issueId && (
+            <span className="bg-blue-500/10 border border-blue-500/20 text-blue-300 px-2 py-0.5 rounded font-medium">
+              {issueId}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Paperclip narrative summary */}
+      {summary && (
+        <div className="bg-white/[0.02] border border-white/8 rounded-lg p-4">
+          <p className="text-[10px] uppercase tracking-wider text-white/30 mb-2">Summary</p>
+          <p className="text-white/80 text-sm leading-relaxed whitespace-pre-wrap">
+            {summary}
+          </p>
+        </div>
+      )}
+
+      {/* Longer agent_runs.output text if present */}
+      {agentOutputText && (
+        <details className="bg-white/[0.02] border border-white/8 rounded-lg">
+          <summary className="cursor-pointer px-4 py-2.5 text-[10px] uppercase tracking-wider text-white/30 hover:text-white/60 transition-colors">
+            Full agent output
+          </summary>
+          <div className="px-4 pb-4">
+            <p className="text-white/70 text-sm leading-relaxed whitespace-pre-wrap">
+              {agentOutputText}
+            </p>
+          </div>
+        </details>
+      )}
+
+      {/* Raw JSON fallback */}
+      {rawOutput && (
+        <details className="bg-black/30 border border-white/5 rounded-lg">
+          <summary className="cursor-pointer px-4 py-2.5 text-[10px] uppercase tracking-wider text-white/25 hover:text-white/50 transition-colors">
+            Raw JSON
+          </summary>
+          <pre className="px-4 pb-4 text-xs text-white/50 overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre-wrap font-mono leading-relaxed">
+            {JSON.stringify(rawOutput, null, 2)}
+          </pre>
+        </details>
+      )}
     </div>
   )
 }

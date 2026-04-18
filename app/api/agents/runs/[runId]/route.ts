@@ -32,5 +32,23 @@ export async function GET(req: Request, { params }: RouteParams) {
     return NextResponse.json({ error: 'Run not found' }, { status: 404 })
   }
 
-  return NextResponse.json(run)
+  // Pull the Paperclip agent_run narrative (if linked)
+  let agentRun: {
+    id: string
+    agent: string | null
+    issue_id: string | null
+    output_summary: string | null
+    output: string | null
+  } | null = null
+
+  if (run.agent_run_id) {
+    const { data } = await supabase
+      .from('agent_runs')
+      .select('id, agent, issue_id, output_summary, output')
+      .eq('id', run.agent_run_id)
+      .single()
+    agentRun = data ?? null
+  }
+
+  return NextResponse.json({ ...run, agent_run: agentRun })
 }

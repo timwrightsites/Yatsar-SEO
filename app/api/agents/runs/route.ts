@@ -22,7 +22,7 @@ export async function GET(req: Request) {
 
   let query = supabase
     .from('bot_runs')
-    .select('id, bot_type, status, client_id, task_id, started_at, finished_at, duration_ms, error_message, output, trigger_source')
+    .select('id, bot_type, status, client_id, task_id, started_at, finished_at, duration_ms, error_message, output, trigger_source, agent_run_id')
     .order('started_at', { ascending: false })
     .limit(limit)
 
@@ -40,26 +40,42 @@ export async function GET(req: Request) {
     return NextResponse.json([])
   }
 
-  // Enrich with client names and task titles
+  // Enrich with client names, task titles, and Paperclip agent_run summaries
   const clientIds = [...new Set(runs.map(r => r.client_id))]
   const taskIds = [...new Set(runs.filter(r => r.task_id).map(r => r.task_id!))]
+  const agentRunIds = [...new Set(
+    runs.filter(r => r.agent_run_id).map(r => r.agent_run_id as string)
+  )]
 
-  const [clientsRes, tasksRes] = await Promise.all([
+  const [clientsRes, tasksRes, agentRunsRes] = await Promise.all([
     supabase.from('clients').select('id, name, domain').in('id', clientIds),
     taskIds.length > 0
       ? supabase.from('strategy_tasks').select('id, title, type').in('id', taskIds)
+      : Promise.resolve({ data: [] }),
+    agentRunIds.length > 0
+      ? supabase.from('agent_runs').select('id, output_summary, issue_id, agent').in('id', agentRunIds)
       : Promise.resolve({ data: [] }),
   ])
 
   const clientMap = new Map((clientsRes.data ?? []).map(c => [c.id, c]))
   const taskMap = new Map(((tasksRes as any).data ?? []).map((t: { id: string; title: string; type: string }) => [t.id, t]))
+  const agentRunMap = new Map(
+    ((agentRunsRes as any).data ?? []).map((a: { id: string; output_summary: string | null; issue_id: string | null; agent: string | null }) => [a.id, a])
+  )
 
   const enriched = runs.map(run => {
     const client = clientMap.get(run.client_id)
     const task = run.task_id ? taskMap.get(run.task_id) : null
+    const agentRun = run.agent_run_id ? (agentRunMap.get(run.agent_run_id) as { output_summary: string | null; issue_id: string | null; agent: string | null } | undefined) : null
 
-    // Extract a conversational summary from output JSON
-    const summary = buildConversationalSummary(run.output, run.bot_type, run.error_message)
+    // Prefer Paperclip's narrative summary over the inferred-from-JSON one
+    const summary =
+      (agentRun?.output_summary && agentRun.output_summary.trim().length > 0)
+        ? agentRun.output_summary
+        : buildConversationalSummary(run.output, run.bot_type, run.error_message)
+
+    const hasOutput = run.output !== null
+      || (typeof agentRun?.output_summary === 'string' && agentRun.output_summary.trim().length > 0)
 
     return {
       id: run.id,
@@ -77,7 +93,9 @@ export async function GET(req: Request) {
       error_message: run.error_message,
       summary,
       trigger_source: run.trigger_source,
-      has_output: run.output !== null,
+      has_output: hasOutput,
+      issue_id: agentRun?.issue_id ?? null,
+      agent_name: agentRun?.agent ?? null,
     }
   })
 
