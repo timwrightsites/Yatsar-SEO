@@ -19,7 +19,8 @@ const botLabel: Record<string, string> = {
   geo: 'GEO',
 }
 
-function timeAgo(dateStr: string): string {
+function timeAgo(dateStr: string | null): string {
+  if (!dateStr) return '—'
   const diff = (Date.now() - new Date(dateStr).getTime()) / 1000
   if (diff < 60) return 'Just now'
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
@@ -34,7 +35,7 @@ export function ActivityFeed({ logs }: ActivityFeedProps) {
         <div key={log.id} className={cn('flex gap-3 py-3', i !== logs.length - 1 && 'border-b border-white/5')}>
           {/* Dot */}
           <div className="flex flex-col items-center pt-1.5">
-            <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', statusDot[log.status] ?? 'bg-slate-500')} />
+            <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', statusDot[log.status ?? 'info'] ?? 'bg-slate-500')} />
           </div>
           {/* Content */}
           <div className="flex-1 min-w-0">

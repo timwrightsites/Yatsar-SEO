@@ -19,7 +19,8 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   error:   { label: 'Failed',      className: 'border-red-500 text-red-400' },
 }
 
-function timeAgo(dateStr: string): string {
+function timeAgo(dateStr: string | null): string {
+  if (!dateStr) return '—'
   const diff = (Date.now() - new Date(dateStr).getTime()) / 1000
   if (diff < 60) return 'Just now'
   if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`
@@ -34,7 +35,7 @@ export function BotActivity({ logs }: BotActivityProps) {
       <div className="border border-white/8 rounded-lg overflow-hidden">
         {logs.map((log, i) => {
           const dot = dotColor[log.bot_type ?? ''] ?? 'bg-white/30'
-          const status = statusConfig[log.status] ?? statusConfig.info
+          const status = statusConfig[log.status ?? 'info'] ?? statusConfig.info
           return (
             <div
               key={log.id}

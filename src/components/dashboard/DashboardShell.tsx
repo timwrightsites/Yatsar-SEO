@@ -74,7 +74,7 @@ export function DashboardShell({ clients, logs, drafts, mrrDisplay }: Props) {
           {visibleClients.map((client) => {
             const lastLog = logs
               .filter(l => l.client_id === client.id)
-              .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+              .sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime())[0]
             return (
               <ClientCard
                 key={client.id}
