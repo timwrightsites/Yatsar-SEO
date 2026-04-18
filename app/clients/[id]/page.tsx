@@ -18,6 +18,7 @@ import { ClientTabs, isTabKey, type TabKey } from '@/components/client/ClientTab
 import AgentPanel from '@/components/client/AgentPanel'
 import { BotRunsPanel } from '@/components/client/BotRunsPanel'
 import { DeliverablesPanel } from '@/components/client/DeliverablesPanel'
+import { IssuesPanel } from '@/components/client/IssuesPanel'
 import { cn } from '@/lib/utils'
 import type { Client, ActivityLog } from '@/types/database'
 
@@ -173,6 +174,13 @@ export default async function ClientPage({ params, searchParams }: Props) {
               Add a domain to this client to load GEO visibility data.
             </div>
           )}
+        </div>
+      )}
+
+      {/* ─── ISSUES TAB ───────────────────────────────────────────── */}
+      {activeTab === 'issues' && (
+        <div className="mb-6">
+          <IssuesPanel clientId={client.id} />
         </div>
       )}
 
