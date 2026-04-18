@@ -167,6 +167,8 @@ export interface Strategy {
   status: 'active' | 'paused' | 'archived' | 'completed'
 }
 
+export type StrategyTaskPriority = 'urgent' | 'high' | 'normal' | 'low'
+
 export interface StrategyTask {
   id: string
   created_at: string
@@ -175,10 +177,12 @@ export interface StrategyTask {
   client_id: string
   strategy_id: string | null
   title: string
+  description: string | null
   type: string | null
   notes: string | null
   output_ref: string | null
   status: string
+  priority: StrategyTaskPriority
   scheduled_for: string | null
 }
 

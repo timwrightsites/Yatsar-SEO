@@ -8,13 +8,15 @@ import {
   Zap,
   ClipboardList,
   CircleDot,
+  ListTodo,
 } from 'lucide-react'
 
-export const TAB_KEYS = ['overview', 'seo', 'geo', 'issues', 'deliverables', 'runs', 'chat'] as const
+export const TAB_KEYS = ['overview', 'tasks', 'seo', 'geo', 'issues', 'deliverables', 'runs', 'chat'] as const
 export type TabKey = (typeof TAB_KEYS)[number]
 
 const TABS: { key: TabKey; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'overview',     label: 'Overview',     icon: LayoutDashboard },
+  { key: 'tasks',        label: 'Tasks',        icon: ListTodo        },
   { key: 'seo',          label: 'SEO Data',     icon: TrendingUp      },
   { key: 'geo',          label: 'GEO',          icon: Sparkles        },
   { key: 'issues',       label: 'Issues',       icon: CircleDot       },

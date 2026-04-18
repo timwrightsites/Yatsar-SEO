@@ -19,6 +19,7 @@ import AgentPanel from '@/components/client/AgentPanel'
 import { BotRunsPanel } from '@/components/client/BotRunsPanel'
 import { DeliverablesPanel } from '@/components/client/DeliverablesPanel'
 import { IssuesPanel } from '@/components/client/IssuesPanel'
+import { TasksPanel } from '@/components/tasks/TasksPanel'
 import { cn } from '@/lib/utils'
 import type { Client, ActivityLog } from '@/types/database'
 
@@ -117,6 +118,13 @@ export default async function ClientPage({ params, searchParams }: Props) {
           {/* Recent agent activity */}
           <BotActivity logs={(logs ?? []) as ActivityLog[]} />
         </>
+      )}
+
+      {/* ─── TASKS TAB ────────────────────────────────────────────── */}
+      {activeTab === 'tasks' && (
+        <div className="mb-6">
+          <TasksPanel clientId={client.id} heading="Tasks" />
+        </div>
       )}
 
       {/* ─── SEO DATA TAB ─────────────────────────────────────────── */}
