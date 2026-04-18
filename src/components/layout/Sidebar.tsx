@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Home, MessageSquare, Settings, Mail, LogOut, Inbox, ListTodo } from 'lucide-react'
+import { Home, MessageSquare, Settings, Mail, LogOut, Inbox, ListTodo, Columns3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-browser'
 
 const nav = [
   { href: '/',              icon: Home },
   { href: '/tasks',         icon: ListTodo },
+  { href: '/pipeline',      icon: Columns3 },
   { href: '/review-queue',  icon: Inbox },
   { href: '/messages',      icon: MessageSquare },
   { href: '/settings',      icon: Settings },
