@@ -20,7 +20,8 @@
  *    c. Compute the link gap: domains that link to ≥2 competitors but NOT
  *       to the client. Score by `DR + log(competitor_count)*10`, take top 15.
  *    d. Upsert into `link_prospects` with `source='gap_analysis'`.
- *    e. Draft outreach via OpenClaw; save to `outreach_drafts`.
+ *    e. Draft outreach via OpenClaw; save to `outreach_threads` with
+ *       status='pending_review' so it enters the human review queue.
  *    This mode requires a client with meaningful backlink data (~DR 15+,
  *    20+ referring domains). Escalates otherwise.
  *
@@ -298,22 +299,26 @@ async function runLinkBotGapAnalysis({
       if (result.status !== 'fulfilled' || !result.value.draft) continue
       const { p, draft } = result.value
       try {
+        // Writes land in outreach_threads (the gated table), NOT the legacy
+        // outreach_drafts table. Threads are addressed via issue_id so the
+        // Issues tab can pull them into the right thread. to_email /
+        // from_email start null — the outreach reviewer fills them at
+        // approval time.
         await supabase
-          .from('outreach_drafts')
+          .from('outreach_threads')
           .insert({
-            client_id:   client.id,
-            prospect_id: p.id,
-            task_id:     task.id,
-            subject:     draft.subject,
-            body:        draft.body,
-            tone:        'direct',
-            status:      'pending_review',
-            agent_id:    LINK_AGENT_ID,
-            agent_notes: `Drafted for prospect ${p.domain}`,
+            client_id:               client.id,
+            prospect_id:             p.id,
+            subject:                 draft.subject,
+            body_md:                 draft.body,
+            status:                  'pending_review',
+            submitted_for_review_at: new Date().toISOString(),
+            issue_id:                typeof task.metadata?.issue_id === 'string' ? task.metadata.issue_id : null,
+            reviewer_notes:          `Drafted by ${LINK_AGENT_ID} for prospect ${p.domain}`,
           })
         draftCount++
       } catch (err) {
-        console.warn(`[link-bot] Failed to insert outreach_draft for ${p.domain}:`, err)
+        console.warn(`[link-bot] Failed to insert outreach_thread for ${p.domain}:`, err)
       }
     }
   } else {
@@ -422,22 +427,24 @@ async function runLinkBotFromTargets(
       if (result.status !== 'fulfilled' || !result.value.draft) continue
       const { p, draft } = result.value
       try {
+        // Strategist-mode writes also land in the gated outreach_threads
+        // table. The strategist's angle is captured in reviewer_notes so
+        // the approver sees the original pitch reason at review time.
         await supabase
-          .from('outreach_drafts')
+          .from('outreach_threads')
           .insert({
-            client_id:   client.id,
-            prospect_id: p.id,
-            task_id:     task.id,
-            subject:     draft.subject,
-            body:        draft.body,
-            tone:        'direct',
-            status:      'pending_review',
-            agent_id:    LINK_AGENT_ID,
-            agent_notes: `Strategist-picked target: ${p.domain}. Angle: ${p.angle ?? 'n/a'}`,
+            client_id:               client.id,
+            prospect_id:             p.id,
+            subject:                 draft.subject,
+            body_md:                 draft.body,
+            status:                  'pending_review',
+            submitted_for_review_at: new Date().toISOString(),
+            issue_id:                typeof task.metadata?.issue_id === 'string' ? task.metadata.issue_id : null,
+            reviewer_notes:          `Strategist-picked target: ${p.domain}. Angle: ${p.angle ?? 'n/a'}`,
           })
         draftCount++
       } catch (err) {
-        console.warn(`[link-bot] Failed to insert strategist outreach_draft for ${p.domain}:`, err)
+        console.warn(`[link-bot] Failed to insert strategist outreach_thread for ${p.domain}:`, err)
       }
     }
   } else {

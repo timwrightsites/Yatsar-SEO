@@ -306,7 +306,34 @@ Valid bot_runs.status values: queued | running | succeeded | failed | escalated 
 NEVER use "completed".
 
 Valid activity_logs.status values: success | warning | error | info.
-NEVER use "succeeded".`
+NEVER use "succeeded".
+
+HUMAN REVIEW GATE — READ CAREFULLY:
+
+Anything you produce that is client-facing (articles, outreach emails,
+publishable reports, external URLs you intend to ship) MUST land in a
+human review queue. You do NOT have authority to publish, send, or mark
+anything as "done for the client" yourself.
+
+When you INSERT into any of these tables:
+
+  - deliverables
+  - content_drafts
+  - outreach_threads
+
+set status='pending_review' and submitted_for_review_at=now() on the
+insert, and include issue_id='${(task.metadata?.issue_id as string | undefined) ?? ''}' so the
+item threads under the correct issue. NEVER insert with status of
+'approved', 'published', 'sent', or 'completed'. A human will flip those
+fields from the dashboard after reviewing the work.
+
+If you are tempted to skip the gate ("this one is obviously fine" /
+"the client expects this weekly report directly") — stop. Submit it
+for review. The reviewer can approve in one click; they cannot un-send
+a bad email.
+
+Internal scratch work (bot_runs output, activity_logs, agent_memory,
+link_prospects) is NOT gated — write those normally.`
 
   if (args.memoryBlock) {
     brief += `\n\n${args.memoryBlock}`
@@ -404,15 +431,15 @@ export const AGENT_PRESETS: Record<string, { label: string; prompts: { label: st
   content: {
     label: 'Writer Agent',
     prompts: [
-      { label: 'Write article from task', value: 'Write the article as specified in the task description. Target striking-distance keywords from the Ahrefs data.' },
-      { label: 'GEO-optimized article', value: 'Write a GEO-optimized article — structure it for AI Overview citations with question H2s, Key Takeaways, and FAQ schema hints.' },
+      { label: 'Write article from task', value: 'Write the article as specified in the task description. Target striking-distance keywords from the Ahrefs data. Submit the draft to content_drafts with status=\'pending_review\' — do not publish.' },
+      { label: 'GEO-optimized article', value: 'Write a GEO-optimized article — structure it for AI Overview citations with question H2s, Key Takeaways, and FAQ schema hints. Submit to content_drafts with status=\'pending_review\'.' },
     ],
   },
   link: {
     label: 'Link Agent',
     prompts: [
-      { label: 'Ahrefs link gap analysis', value: 'Run an Ahrefs link gap analysis against our top 3 competitors. Find prospects with DR 20-70 that link to competitors but not us.' },
-      { label: 'Draft outreach emails', value: 'Research the link targets in the task metadata and draft personalized outreach emails for each prospect.' },
+      { label: 'Ahrefs link gap analysis', value: 'Run an Ahrefs link gap analysis against our top 3 competitors. Find prospects with DR 20-70 that link to competitors but not us. Save prospects to link_prospects.' },
+      { label: 'Draft outreach emails', value: 'Research the link targets in the task metadata and draft personalized outreach emails for each prospect. Write each email to outreach_threads with status=\'pending_review\' — do NOT send.' },
     ],
   },
   geo: {

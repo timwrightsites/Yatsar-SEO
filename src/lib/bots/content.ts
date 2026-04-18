@@ -106,21 +106,33 @@ export async function runContentBot({
   // ── 4. Parse response into structured fields
   const draft = parseDraft(raw, task)
 
-  // ── 5. Insert into content_drafts
+  // ── 5. Insert into content_drafts (review-gated)
+  //
+  // Column set matches the current content_drafts schema (see
+  // migrations/0009-issues-and-approvals.sql). Legacy columns (slug,
+  // content, word_count, agent_id, agent_notes) were dropped when the
+  // approval-gate schema was introduced — don't reintroduce them here or
+  // the insert will silently fail with a 42703.
+  //
+  // The gate:
+  //   status='pending_review' + submitted_for_review_at=now()
+  // ensures this draft lands in the human review queue on the Issues tab
+  // and cannot be "published" by the bot on its own.
+  const nowIso  = new Date().toISOString()
+  const issueId = typeof task.metadata?.issue_id === 'string' ? task.metadata.issue_id : null
   let draftId: string | null = null
   try {
     const { data, error } = await supabase
       .from('content_drafts')
       .insert({
-        client_id:      client.id,
-        title:          draft.title,
-        slug:           draft.slug,
-        target_keyword: draft.target_keyword,
-        content:        draft.content,
-        word_count:     draft.word_count,
-        status:         'pending_review',
-        agent_id:       CONTENT_AGENT_ID,
-        agent_notes:    `Generated for strategy task: ${task.title}`,
+        client_id:               client.id,
+        title:                   draft.title,
+        target_keyword:          draft.target_keyword,
+        body_html:               draft.content,
+        status:                  'pending_review',
+        author_agent:            CONTENT_AGENT_ID,
+        submitted_for_review_at: nowIso,
+        issue_id:                issueId,
       })
       .select('id')
       .single() as { data: { id: string } | null; error: { message: string } | null }
