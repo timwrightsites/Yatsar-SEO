@@ -2,15 +2,16 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Home, MessageSquare, Settings, Mail, LogOut } from 'lucide-react'
+import { Home, MessageSquare, Settings, Mail, LogOut, Inbox } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-browser'
 
 const nav = [
-  { href: '/',         icon: Home },
-  { href: '/messages', icon: MessageSquare },
-  { href: '/settings', icon: Settings },
-  { href: '/mail',     icon: Mail },
+  { href: '/',              icon: Home },
+  { href: '/review-queue',  icon: Inbox },
+  { href: '/messages',      icon: MessageSquare },
+  { href: '/settings',      icon: Settings },
+  { href: '/mail',          icon: Mail },
 ]
 
 export function Sidebar() {
