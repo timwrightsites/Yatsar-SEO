@@ -201,6 +201,8 @@ export interface LinkProspect {
   source_run_id: string | null
   status: string
   notes: string | null
+  issue_id: string | null
+  reviewer_notes: string | null
 }
 
 export interface OutreachDraft {
@@ -225,9 +227,25 @@ export interface OutreachThread {
   subject: string | null
   to_email: string | null
   from_email: string | null
-  status: string
+  status:
+    | 'drafted'
+    | 'pending_review'
+    | 'approved'
+    | 'rejected'
+    | 'sent'
+    | 'replied'
+    | 'bounced'
+    | 'closed'
+    | string
   last_message: string | null
   last_activity_at: string | null
+  issue_id: string | null
+  reviewer_notes: string | null
+  body_md: string | null
+  submitted_for_review_at: string | null
+  approved_at: string | null
+  rejected_at: string | null
+  sent_at: string | null
 }
 
 export interface ContentDraft {
@@ -240,9 +258,96 @@ export interface ContentDraft {
   target_keyword: string | null
   body_html: string | null
   body_json: Json | null
-  status: 'draft' | 'reviewed' | 'approved' | 'published' | 'archived'
+  status:
+    | 'draft'
+    | 'pending_review'
+    | 'reviewed'
+    | 'approved'
+    | 'rejected'
+    | 'published'
+    | 'archived'
   author_agent: string | null
   source_run_id: string | null
+  issue_id: string | null
+  reviewer_notes: string | null
+  submitted_for_review_at: string | null
+  approved_at: string | null
+  rejected_at: string | null
+  published_at: string | null
+}
+
+// ─── Paperclip orchestration layer (migration 004) ──────────────────────────
+
+export type IssueStatus = 'open' | 'in_progress' | 'blocked' | 'resolved' | 'archived'
+export type IssuePriority = 'low' | 'normal' | 'high' | 'urgent'
+
+export interface Issue {
+  id: string                       // e.g. 'TRU-22' — text PK, may also hold a uuid for legacy rows
+  client_id: string
+  title: string
+  description: string | null
+  status: IssueStatus
+  assignee_agent: string | null
+  priority: IssuePriority
+  external_url: string | null
+  created_at: string
+  updated_at: string
+  resolved_at: string | null
+}
+
+export type DeliverableType =
+  | 'backlink_plan'
+  | 'acquisition_plan'
+  | 'audit_report'
+  | 'content_brief'
+  | 'strategy_doc'
+  | 'keyword_research'
+  | 'competitor_brief'
+  | 'geo_plan'
+  | 'recap_report'
+  | 'other'
+
+export type DeliverableStatus =
+  | 'draft'
+  | 'pending_review'
+  | 'approved'
+  | 'rejected'
+  | 'sent'
+  | 'archived'
+
+export interface Deliverable {
+  id: string
+  client_id: string
+  issue_id: string | null
+  agent_run_id: string | null
+  type: DeliverableType
+  title: string
+  content_md: string | null
+  external_url: string | null
+  status: DeliverableStatus
+  reviewer_notes: string | null
+  author_agent: string | null
+  submitted_for_review_at: string | null
+  approved_at: string | null
+  rejected_at: string | null
+  sent_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ApprovalTargetType = 'deliverable' | 'content_draft' | 'outreach_thread' | 'link_prospect'
+export type ApprovalAction = 'submit_for_review' | 'approve' | 'reject' | 'edit' | 'send' | 'archive' | 'revert'
+export type ApprovalActorType = 'user' | 'agent'
+
+export interface Approval {
+  id: string
+  target_type: ApprovalTargetType
+  target_id: string
+  action: ApprovalAction
+  actor_type: ApprovalActorType
+  actor_id: string | null
+  notes: string | null
+  created_at: string
 }
 
 export interface Competitor {
@@ -404,6 +509,24 @@ export interface Database {
         Row: AgencySettings
         Insert: Partial<Omit<AgencySettings, 'id' | 'created_at' | 'updated_at'>>
         Update: Partial<AgencySettings>
+        Relationships: []
+      }
+      issues: {
+        Row: Issue
+        Insert: Partial<Omit<Issue, 'created_at' | 'updated_at'>> & { id: string; client_id: string; title: string }
+        Update: Partial<Issue>
+        Relationships: []
+      }
+      deliverables: {
+        Row: Deliverable
+        Insert: Partial<Omit<Deliverable, 'id' | 'created_at' | 'updated_at'>> & { client_id: string; type: DeliverableType; title: string }
+        Update: Partial<Deliverable>
+        Relationships: []
+      }
+      approvals: {
+        Row: Approval
+        Insert: Partial<Omit<Approval, 'id' | 'created_at'>> & { target_type: ApprovalTargetType; target_id: string; action: ApprovalAction; actor_type: ApprovalActorType }
+        Update: Partial<Approval>
         Relationships: []
       }
     }
